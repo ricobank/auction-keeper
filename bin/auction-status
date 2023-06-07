@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+# This file is part of Maker Keeper Framework.
+#
+# Copyright (C) 2018 bargst
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import argparse
+import decimal
+from datetime import datetime
+
+from babel.numbers import format_decimal
+from texttable import Texttable
+from web3 import Web3
+
+from pyflex.deployment import GfDeployment
+from pyflex.gf import Collateral_Type, Collateral
+from pyflex import Address, Wad
+
+parser = argparse.ArgumentParser(prog='auction-keeper')
+parser.add_argument("--rpc-host", type=str, default="localhost", help="JSON-RPC host (default: `localhost')")
+parser.add_argument("--rpc-port", type=int, default=8545, help="JSON-RPC port (default: `8545')")
+parser.add_argument("--rpc-timeout", type=int, default=10, help="JSON-RPC timeout (in seconds, default: 10)")
+parser.add_argument("--eth-from", type=str, help="Ethereum account from which to send transactions")
+parser.add_argument("--json-from", type=str, help="JSON file containing geb deployment addresses")
+arguments = parser.parse_args()
+
+w3 = Web3(Web3.HTTPProvider(endpoint_uri=f"http://{arguments.rpc_host}:{arguments.rpc_port}",
+                            request_kwargs={"timeout": arguments.rpc_timeout}))
+w3.eth.defaultAccount = arguments.eth_from or w3.eth.accounts[0]
+our_address = Address(w3.eth.defaultAccount)
+
+## Default Kovan deployment
+# TODO Add config
+geb = """
+    {
+       "GEB_DEPLOY": "0xDb255f9481938127bFD55ea3F409140c0a22aa9D",
+       "COLLATERALS": ["ETH"],
+       "ETH": "0x0000000000000000000000000000000000000000"
+    }
+"""
+if arguments.json_from:
+    with open(arguments.json_from) as file:
+        dss = file.read()
+d = GfDeployment.from_json(web3=w3, conf=dss)
+
+
+def format_amount(amount):
+    if isinstance(amount, str) and amount == "":
+        return format_decimal(0, format='#,##0.00', locale='en_US')
+    try:
+        return format_decimal(amount, format='#,##0.00', locale='en_US')
+    except decimal.InvalidOperation:
+        return '*error*'
+
+
+def print_balances():
+    def draw_table(table_data):
+        table = Texttable(max_width=250)
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['t', 't', 't', 't', 't'])
+        table.set_cols_align(['r', 'r', 'r', 'r', 'r'])
+        table.set_cols_width([8, 12, 12, 12, 12])
+        table.add_rows([["    name", "       ERC20", " Adapter/SAFEEngine", "         collateral", "         debt"]] + table_data)
+        return table.draw()
+
+    datas = []
+    datas.append(["SystemCoin",
+                  format_amount(d.system_coin.balance_of(our_address)),
+                  format_amount(d.safe_engine.coin_balance(our_address)),
+                  "", ""])
+    datas.append(["PROT", format_amount(d.prot.balance_of(our_address)),
+                  "", "", ""])
+    datas.append(["ETH",
+                  format_amount(Wad(w3.eth.getBalance(our_address.address))),
+                  format_amount(d.safe_engine.token_collateral(CollateralType('ETH'), our_address)),
+                  format_amount(d.safe_engine.safe(CollateralType('ETH'), our_address).locked_collateral),
+                  format_amount(d.safe_engine.safe(CollateralType('ETH'), our_address).generated_debt),
+                  ])
+    for c in [c for c in d.collaterals if c.collateral_type.name != 'ETH']:
+        datas.append([c.collateral_type.name,
+                      format_amount(c.collateral.balance_of(our_address)),
+                      format_amount(d.safe_engine.token_collateral(c.collateral_type, our_address)),
+                      format_amount(d.safe_engine.safe(c.collateral_type, our_address).ink),
+                      format_amount(d.safe_engine.safe(c.collateral_type, our_address).art),
+                      ])
+    return draw_table(datas)
+
+
+def print_unsafe_safe():
+    def draw_table(table_data):
+        table = Texttable(max_width=250)
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['t', 't', 't', 't'])
+        table.set_cols_align(['c', 'r', 'r', 'r'])
+        table.set_cols_width([6, 12, 12, 42])
+        table.add_rows([["collateral_type", "locked_collateral", "amount_to_raise", "high_bidder"]] + table_data)
+        return table.draw()
+
+    last_safe_mod_event = {}
+    for safe_mod_event in d.safe_engine.past_safe_modifications(w3.eth.blockNumber):
+        last_safe_mod_event[safe_mode_event.safe.address] = frob_event
+
+    datas = []
+    for safe_addr in last_safe_mode_event:
+        collateral_type = last_safe_mod_event[safe_addr].collateral_type
+        current_safe = d.safe_engine.safe(collateral_type, safe_addr)
+        safe = current_safe.locked_collateral * d.pit.spot(collateral_type) >= current_safe.art * d.safe_engine.collateral_type(collateral_type.name).rate
+        if not safe:
+            datas.append([
+                collateral_type.name,
+                format_amount(current_safe.locked_collateral),
+                format_amount(current_safe.art),
+                current_safe.address,
+            ])
+
+    if datas:
+        return draw_table(datas)
+    else:
+        return ' No unsafe SAFE'
+
+
+def print_flips():
+    def draw_table(table_data):
+        table = Texttable(max_width=250)
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['t', 't', 't', 't'])
+        table.set_cols_align(['c', 'r', 'r', 'r'])
+        table.set_cols_width([11, 6, 12, 12])
+        table.add_rows([["Cat.Flip.id", "collateral_type", "ink", "tab"]] + table_data)
+        return table.draw()
+
+    datas = []
+    for c in d.collaterals:
+        for i in range(d.liquidation_engine.nflip()):
+            flip = d.liquidation_engine.flips(i)
+            if flip.tab > Wad(0):
+                datas.append([
+                    flip.id,
+                    flip.safe.collateral_type.name,
+                    format_amount(flip.safe.locked_collateral),
+                    format_amount(flip.tab),
+                ])
+
+    if datas:
+        return draw_table(datas)
+    else:
+        return ' No collateral auction pending'
+
+
+def print_auctions(table_data):
+    table = Texttable(max_width=250)
+    table.set_deco(Texttable.HEADER)
+    table.set_cols_dtype(['t', 't', 't', 't', 't', 't', 't', 't'])
+    table.set_cols_align(['c', 'c', 'r', 'r', 'r', 'r', 'r', 'r'])
+    table.set_cols_width([12, 4, 12, 12, 12, 33, 19, 42])
+    table.add_rows([["name", "id", "bid", "lot", "tab", "tic", "end", "winner"]] + table_data)
+
+    if table_data:
+        return table.draw()
+    else:
+        return ' No auction in progress'
+
+
+def fetch_auctions():
+    auctions = []
+
+    # Flippers Auctions
+    for c in d.collaterals:
+        for i in range(1, c.flipper.kicks() + 1):
+            bid = c.flipper.bids(i)
+            if bid.end > 0:
+                auctions.append([
+                    f"Flip[{c.collateral_type.name}]",
+                    i,
+                    format_amount(bid.bid),
+                    format_amount(bid.lot),
+                    format_amount(bid.tab),
+                    f"{bid.tic}/{datetime.fromtimestamp(bid.tic)}",
+                    datetime.fromtimestamp(bid.end),
+                    bid.guy,
+                ])
+    # Flapper Auctions
+    for i in range(1, d.flap.kicks() + 1):
+        bid = d.flap.bids(i)
+        if bid.end > 0:
+            auctions.append([
+                'Flap',
+                i,
+                format_amount(bid.bid),
+                format_amount(bid.lot),
+                "",
+                f"{bid.tic}/{datetime.fromtimestamp(bid.tic)}",
+                datetime.fromtimestamp(bid.end),
+                bid.guy,
+            ])
+
+    # Flopper Auctions
+    for i in range(1, d.flop.kicks() + 1):
+        bid = d.flop.bids(i)
+        if bid.end > 0:
+            auctions.append([
+                'Flop',
+                i,
+                format_amount(bid.bid),
+                format_amount(bid.lot),
+                "",
+                f"{bid.tic}/{datetime.fromtimestamp(bid.tic)}",
+                datetime.fromtimestamp(bid.end),
+                bid.guy,
+            ])
+
+    return auctions
+
+
+def print_auctions_parameters(table_data):
+    table = Texttable(max_width=250)
+    table.set_deco(Texttable.HEADER)
+    table.set_cols_dtype(['t', 't', 't', 't'])
+    table.set_cols_align(['l', 'c', 'c', 'r'])
+    table.set_cols_width([12, 6, 6, 12])
+    table.add_rows([["auction", "ttl", "tau", "min_size"]] + table_data)
+
+    return table.draw()
+
+
+def fetch_auction_parameters():
+    params = []
+    for c in d.collaterals:
+        params.append([f"Flip[{c.collateral_type.name}]",
+                       f"{c.flipper.ttl()/3600}h",
+                       f"{c.flipper.tau()/3600}h",
+                       format_amount(d.liquidation_engine.lump(c.collateral_type)),
+                       ])
+    params.append([f"Flap",
+                   f"{d.flap.ttl()/3600}h",
+                   f"{d.flap.tau()/3600}h",
+                   format_amount(d.accounting_engine.bump()),
+                   ])
+    params.append([f"Flop",
+                   f"{d.flop.ttl()/3600}h",
+                   f"{d.flop.tau()/3600}h",
+                   format_amount(d.accounting_engine.sump()),
+                   ])
+    return params
+
+
+def print_vow():
+    def draw_table(table_data):
+        table = Texttable(max_width=250)
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['t', 't', 't'])
+        table.set_cols_align(['r', 'r', 'r'])
+        table.set_cols_width([5, 22, 12])
+        table.add_rows([["", "", "amount"]] + table_data)
+        return table.draw()
+
+    datas = []
+    datas.append(["", "Sin=", format_amount(d.accounting_engine.sin())])
+    datas.append(["", "Ash=", format_amount(d.accounting_engine.ash())])
+    datas.append(["", "", ""])
+    datas.append(["If", "Joy=", format_amount(d.accounting_engine.joy())])
+    datas.append([">", "Sin+Woe+Ash+bump+hump=", format_amount(d.accounting_engine.awe() + d.vow.bump() + d.vow.hump())])
+    datas.append(["then", "flap() when Woe=", 0])
+    datas.append(["", "", ""])
+    datas.append(["If", "Woe=", format_amount(d.accounting_engine.woe())])
+    datas.append([">", "sump=", format_amount(d.accounting_engine.sump())])
+    datas.append(["then", "flop() when Joy=", 0])
+    datas.append(["", "", ""])
+    return draw_table(datas)
+
+
+def print_debt_queue():
+    def draw_table(table_data):
+        table = Texttable(max_width=250)
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['t', 't', 't', 't'])
+        table.set_cols_align(['c', 'r', 'r', 'r'])
+        table.set_cols_width([13, 19, 19, 12])
+        table.add_rows([["era", "starting", "ending (flogable)", "amount"]] + table_data)
+        return table.draw()
+
+    datas = []
+    for liquidation_event in d.liquidation_engine.past_liquidations(100000):
+        era = liquidation_event.era(w3)
+        sin = d.accounting_engine.sin_of(era)
+        if sin > Wad(0):
+            datas.append([era,
+                          datetime.fromtimestamp(era),
+                          datetime.fromtimestamp(era + d.accounting_engine.wait()),
+                          format_amount(sin)])
+
+    if datas:
+        return draw_table(datas)
+    else:
+        return ' No debt in queue'
+
+
+print(f"\nBalances of {our_address}"
+      f"\n{print_balances()}"
+      f"\n\n"
+      f"\nUnsafe CDPs:"
+      f"\n{print_unsafe_safe()}\n"
+      f"\nAuctions in progress:"
+      f"\n{print_flips()}\n"
+      f"\n{print_auctions(fetch_auctions())}\n"
+      f"\nAuctions parameters:"
+      f"\n{print_auctions_parameters(fetch_auction_parameters())}\n"
+      f"\n"
+      f"\n Vow stats:"
+      f"\n{print_vow()}"
+      f"\nPending debt queue:"
+      f"\n{print_debt_queue()}\n"
+      f"Vow parameters: wait={d.accounting_engine.wait()/3600}h "
+      f"bump={format_amount(d.accounting_engine.bump())} hump={format_amount(d.vow.hump())}\n")
