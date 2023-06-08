@@ -77,14 +77,16 @@ abstract contract UniSwapper is Ward {
 
 contract Strat is UniSwapper, Math {
     address payable public bank;
-    address rico;
+    Gem rico;
+    Gem risk;
     error ErrSwap();
     error ErrBail();
 
-    constructor(address payable bank, address risk) {
+    constructor(address payable bank) {
         rico = File(bank).rico();
+        risk = Vow(bank).RISK();
         rico.approve(bank, type(uint).max);
-        Gem(risk).approve(bank, type(uint).max);
+        risk.approve(bank, type(uint).max);
     }
 
     function fill_flip(bytes32 i, address u) external {
@@ -95,29 +97,45 @@ contract Strat is UniSwapper, Math {
 
     function fill_flop(bytes32[] calldata ilks) external {
         Vat(bank).flash(address(this), abi.encodeWithSelector(
-            Strat.flop.selector, ilks
+            Strat.flop.selector, Vat(bank).MINT()
         );
     }
 
     function bail(bytes32 i, address u, uint amt, uint usr) external {
         Vat(bank).drip(i);
         address gem = abi.decode(Vat(bank).gethi('gem', i), (address));
-        uint ricobefore = Gem(rico).balanceOf(address(this);
+        uint ricobefore = rico.balanceOf(address(this);
         Vow(bank).bail(i, u);
 
         // swap to replenish what was paid for the flip
-        uint ricospent = Gem(rico).balanceOf(address(this)) - ricobefore;;
-        uint ink = abi.decode(Vat(bank).ink(i, u), (uint));
+        uint ricospent = rico.balanceOf(address(this)) - ricobefore;;
+        uint ink = Gem(gem).balanceOf(address(this));
         uint res = _swap(gem, rico, SwapKind.EXACT_OUT, ricospent, ink);
         if (res == SWAP_ERR) revert ErrSwap();
 
         // give back the extra funds to caller
         uint ricobal = rico.balanceOf(address(this));
         if (ricobal < amt) revert ErrBail();
-        Gem(rico).transfer(usr, amt - ricobal);
+        rico.transfer(usr, amt - ricobal);
         Gem(gem).transfer(usr, Gem(gem).balanceOf(address(this)));
     }
 
+    function flop(uint amt, address usr) external {
+        bytes32[] memory ilks = new bytes32[](0);
+        uint ricobefore = rico.balanceOf(address(this));
+        Vat(bank).keep(ilks);
+        uint ricospent = rico.balanceOf(address(this)) - ricobefore;
+
+        _swap(
+            address(risk), address(rico), SwapKind.EXACT_OUT,
+            ricospent, risk.balanceOf(address(this))
+        );
+
+        uint ricobal = rico.balanceOf(address(this));
+        if (ricobal < amt) revert ErrBail();
+        rico.transfer(usr, amt - ricobal);
+        risk.transfer(usr, risk.balanceOf(address(this)));
+    }
 }
 
 
