@@ -1,0 +1,29 @@
+{
+  "name": "auction-keeper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "forge test --fork-block-number 16445606 -vv -f $RPC_URL",
+    "download-submodules": "git submodule update --init --recursive"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ricobank/auction-keeper.git"
+  },
+  "keywords": [
+    "auction",
+    "keeper",
+    "ricobank",
+    "flash"
+  ],
+  "author": "",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/ricobank/auction-keeper/issues"
+  },
+  "homepage": "https://github.com/ricobank/auction-keeper#readme"
+}

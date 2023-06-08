@@ -1,0 +1,20 @@
+[profile.default]
+src = 'src'
+out = 'artifacts'
+libs = [
+    'lib',
+    'node_modules',
+]
+remappings = [
+    'feedbase/=lib/feedbase/src/',
+    'gemfab/=lib/gemfab/src',
+    'hardhat/=node_modules/hardhat/',
+]
+optimizer=true
+optimizer-runs=10_000
+
+[profile.lite.optimizer_details.yulDetails]
+stackAllocation = true
+optimizerSteps = ''
+
+# See more config options https://github.com/foundry-rs/foundry/tree/master/config
