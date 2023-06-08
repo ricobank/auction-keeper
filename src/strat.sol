@@ -1,18 +1,17 @@
-/// SPDX-License-Identifier: AGPL-3.0
+/// SPDX-License-Identifier: AGPL-3.0-or-later
 
 pragma solidity 0.8.20;
-import {Vow} from './lib/ricobank/src/vow.sol';
-import {Vat} from './lib/ricobank/src/vow.sol';
-import {File} from './lib/ricobank/src/file.sol';
-import {Vat} from './lib/ricobank/src/vat.sol';
-import {Vow} from './lib/ricobank/src/vow.sol';
-
-// SPDX-License-Identifier: AGPL-3.0-or-later
-
-pragma solidity 0.8.19;
+import {Vow} from '../lib/ricobank/src/vow.sol';
+import {Vat} from '../lib/ricobank/src/vow.sol';
+import {File} from '../lib/ricobank/src/file.sol';
+import {Vat} from '../lib/ricobank/src/vat.sol';
+import {Vow} from '../lib/ricobank/src/vow.sol';
 
 import { ISwapRouter } from './TEMPinterface.sol';
-import './mixin/ward.sol';
+import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
+import {Math} from '../lib/ricobank/src/mixin/math.sol';
+import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
+import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
 
 abstract contract UniSwapper is Ward {
     struct Path {
@@ -77,48 +76,54 @@ abstract contract UniSwapper is Ward {
 
 contract Strat is UniSwapper, Math {
     address payable public bank;
-    Gem rico;
-    Gem risk;
+    Gem public rico;
+    Gem public risk;
+    Feedbase public fb;
     error ErrSwap();
     error ErrBail();
     error ErrFlap();
     error ErrFlop();
 
-    constructor(address payable bank) {
+    constructor(address payable _bank) {
+        bank = _bank;
         rico = File(bank).rico();
         risk = Vow(bank).RISK();
         rico.approve(bank, type(uint).max);
         risk.approve(bank, type(uint).max);
+        fb = File(bank).fb();
     }
 
     function fill_flip(bytes32 i, address u) external {
-        return Vat(bank).flash(address(this), abi.encodeWithSelector(
+        Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.bail.selector, i, u, msg.sender
-        );
+        ));
     }
 
-    function fill_flop(bytes32[] calldata ilks) external {
+    function fill_flop() external {
         Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flop.selector, msg.sender
-        );
+        ));
     }
 
-    function fill_flap(bytes32[] calldata ilks) external {
+    function fill_flap() external {
         Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flap.selector, msg.sender
-        );
+        ));
     }
 
-    function bail(bytes32 i, address u, uint usr) external {
+    function bail(bytes32 i, address u, address usr) external {
         Vat(bank).drip(i);
-        address gem = abi.decode(Vat(bank).gethi('gem', i), (address));
-        uint ricobefore = rico.balanceOf(address(this);
+        address gem = abi.decode(Vat(bank).gethi(i, 'gem', i), (address));
+        uint ricobefore = rico.balanceOf(address(this));
         Vow(bank).bail(i, u);
 
         // swap to replenish what was paid for the flip
         uint ricospent = ricobefore - rico.balanceOf(address(this));
         uint ink = Gem(gem).balanceOf(address(this));
-        uint res = _swap(gem, rico, SwapKind.EXACT_OUT, ricospent, ink);
+        uint res = _swap(
+            gem, address(rico), address(this),
+            SwapKind.EXACT_OUT, ricospent, ink
+        );
         if (res == SWAP_ERR) revert ErrSwap();
 
         // give back the extra funds to caller
@@ -132,12 +137,12 @@ contract Strat is UniSwapper, Math {
     function flop(address usr) external {
         bytes32[] memory ilks = new bytes32[](0);
         uint ricobefore = rico.balanceOf(address(this));
-        Vat(bank).keep(ilks);
+        Vow(bank).keep(ilks);
         uint ricospent = ricobefore - rico.balanceOf(address(this));
 
         uint res = _swap(
-            address(risk), address(rico), SwapKind.EXACT_OUT,
-            ricospent, risk.balanceOf(address(this))
+            address(risk), address(rico), address(this),
+            SwapKind.EXACT_OUT, ricospent, risk.balanceOf(address(this))
         );
         if (res == SWAP_ERR) revert ErrSwap();
 
@@ -154,26 +159,26 @@ contract Strat is UniSwapper, Math {
         uint rush;  uint price;
         {
             uint debt = Vat(bank).debt();
-            uint rush = Vat(bank).debt() + flaprico / debt;
-            (bytes32 val,) = fb.pull(Vow(bank).flapsrc, Vow(bank).flaptag);
+            rush = Vat(bank).debt() + flaprico / debt;
+            (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
+            (bytes32 val,) = fb.pull(flapsrc, flaptag);
             price = uint(val);
         }
 
         uint res = _swap(
-            address(rico), address(risk), SwapKind.EXACT_OUT, price * flaprico / rush, type(uint).max
+            address(rico), address(risk), address(this),
+            SwapKind.EXACT_OUT, price * flaprico / rush, type(uint).max
         );
         if (res == SWAP_ERR) revert ErrSwap();
 
         uint ricospent0 = ricobefore - rico.balanceOf(address(this));
-        uint riskspent;
-        {
-            uint riskbefore = risk.balanceOf(address(this));
-            bytes32[] memory ilks = new bytes32[](0);
-            Vat(bank).keep(ilks);
-            riskspent = riskbefore - risk.balanceOf(address(this));
-        }
+        bytes32[] memory ilks = new bytes32[](0);
+        Vow(bank).keep(ilks);
 
-        _swap(address(risk), address(rico), SwapKind.EXACT_OUT, ricospent0, type(uint).max);
+        _swap(
+            address(risk), address(rico), address(this),
+            SwapKind.EXACT_OUT, ricospent0, type(uint).max
+        );
 
         uint ricobal = rico.balanceOf(address(this));
         uint MINT = Vat(bank).MINT();

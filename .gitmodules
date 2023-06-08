@@ -5,3 +5,6 @@
 [submodule "lib/gemfab"]
 	path = lib/gemfab
 	url = https://github.com/ricobank/gemfab
+[submodule "lib/feedbase"]
+	path = lib/feedbase
+	url = https://github.com/feedbase/feedbase.git
