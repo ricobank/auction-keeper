@@ -13,7 +13,7 @@ import {Math} from '../lib/ricobank/src/mixin/math.sol';
 import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
 import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
 
-abstract contract UniSwapper is Ward {
+abstract contract UniSwapper is Ward, Math {
     struct Path {
         bytes fore;
         bytes rear;
@@ -73,7 +73,7 @@ abstract contract UniSwapper is Ward {
 }
 
 
-contract Strat is UniSwapper, Math {
+contract Strat is UniSwapper {
     address payable public bank;
     Gem public rico;
     Gem public risk;
@@ -90,6 +90,11 @@ contract Strat is UniSwapper, Math {
         rico.approve(bank, type(uint).max);
         risk.approve(bank, type(uint).max);
         fb = File(bank).fb();
+    }
+
+    function grant() external {
+        rico.approve(address(router), type(uint).max);
+        risk.approve(address(router), type(uint).max);
     }
 
     function fill_flip(bytes32 i, address u) external {
@@ -120,7 +125,6 @@ contract Strat is UniSwapper, Math {
         // swap to replenish what was paid for the flip
         uint ricospent = ricobefore - rico.balanceOf(address(this));
         Gem(gem).approve(address(router), type(uint).max);
-        rico.approve(address(router), type(uint).max);
         ricobefore = rico.balanceOf(address(this));
         uint res = _swap(
             gem, address(rico), address(this),
@@ -134,6 +138,40 @@ contract Strat is UniSwapper, Math {
         if (ricobal < MINT) revert ErrBail();
         rico.transfer(usr, ricobal - MINT);
         Gem(gem).transfer(usr, Gem(gem).balanceOf(address(this)));
+    }
+
+    function flap(address usr) external {
+        uint ricobefore = rico.balanceOf(address(this));
+        uint flaprico = rico.balanceOf(address(bank)) - Vat(bank).sin() / RAY;
+        uint rush;  uint price;
+        {
+            uint debt = Vat(bank).debt();
+            rush = rdiv(debt + flaprico, debt);
+            (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
+            (bytes32 val,) = fb.pull(flapsrc, flaptag);
+            price = uint(val);
+        }
+
+        uint res = _swap(
+            address(rico), address(risk), address(this),
+            SwapKind.EXACT_OUT, flaprico * price / rush, rico.balanceOf(address(this))
+        );
+        if (res == SWAP_ERR) revert ErrSwap();
+
+        uint ricospent0 = ricobefore - rico.balanceOf(address(this));
+        bytes32[] memory ilks = new bytes32[](0);
+        Vow(bank).keep(ilks);
+
+        _swap(
+            address(risk), address(rico), address(this),
+            SwapKind.EXACT_OUT, ricospent0, type(uint).max
+        );
+
+        uint ricobal = rico.balanceOf(address(this));
+        uint MINT = Vat(bank).MINT();
+        if (ricobal < MINT) revert ErrFlap();
+        rico.transfer(usr, ricobal - MINT);
+        risk.transfer(usr, risk.balanceOf(address(this)));
     }
 
     function flop(address usr) external {
@@ -155,39 +193,7 @@ contract Strat is UniSwapper, Math {
         risk.transfer(usr, risk.balanceOf(address(this)));
     }
 
-    function flap(address usr) external {
-        uint ricobefore = rico.balanceOf(address(this));
-        uint flaprico = rico.balanceOf(address(bank)) - Vat(bank).sin() / RAY;
-        uint rush;  uint price;
-        {
-            uint debt = Vat(bank).debt();
-            rush = Vat(bank).debt() + flaprico / debt;
-            (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
-            (bytes32 val,) = fb.pull(flapsrc, flaptag);
-            price = uint(val);
-        }
 
-        uint res = _swap(
-            address(rico), address(risk), address(this),
-            SwapKind.EXACT_OUT, price * flaprico / rush, type(uint).max
-        );
-        if (res == SWAP_ERR) revert ErrSwap();
-
-        uint ricospent0 = ricobefore - rico.balanceOf(address(this));
-        bytes32[] memory ilks = new bytes32[](0);
-        Vow(bank).keep(ilks);
-
-        _swap(
-            address(risk), address(rico), address(this),
-            SwapKind.EXACT_OUT, ricospent0, type(uint).max
-        );
-
-        uint ricobal = rico.balanceOf(address(this));
-        uint MINT = Vat(bank).MINT();
-        if (ricobal < MINT) revert ErrFlap();
-        rico.transfer(usr, ricobal - MINT);
-        risk.transfer(usr, risk.balanceOf(address(this)));
-    }
 
 }
 
