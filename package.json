@@ -7,7 +7,11 @@
     "lib": "lib"
   },
   "scripts": {
+    "initialize": "git submodule update --init --recursive && cd lib/ricobank && npm run initialize && cd - && npm i && npm run build:feedbase",
+    "build:feedbase": "cd lib/feedbase && npm run initialize && cd -",
     "test": "forge test --fork-block-number 16445606 -vv -f $RPC_URL",
+    "js-test": "ts-mocha --timeout 100000 jstest/*",
+    "build": "npx hardhat compile",
     "download-submodules": "git submodule update --init --recursive"
   },
   "repository": {
@@ -25,5 +29,15 @@
   "bugs": {
     "url": "https://github.com/ricobank/auction-keeper/issues"
   },
-  "homepage": "https://github.com/ricobank/auction-keeper#readme"
+  "homepage": "https://github.com/ricobank/auction-keeper#readme",
+  "devDependencies": {
+    "@etherpacks/dpack": "^0.0.31",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@types/mocha": "^10.0.1",
+    "hardhat": "^2.14.1",
+    "minihat": "^0.0.6",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.3"
+  }
 }

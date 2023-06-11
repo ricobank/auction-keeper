@@ -1,10 +1,8 @@
 [submodule "lib/ricobank"]
 	path = lib/ricobank
 	url = https://github.com/ricobank/ricobank
-	branch = geth
-[submodule "lib/gemfab"]
-	path = lib/gemfab
-	url = https://github.com/ricobank/gemfab
+	branch = testnet
 [submodule "lib/feedbase"]
 	path = lib/feedbase
 	url = https://github.com/feedbase/feedbase.git
+	branch = main
