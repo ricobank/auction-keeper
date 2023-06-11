@@ -63,7 +63,6 @@ abstract contract UniSwapper is Ward {
                     amountOut: amt,
                     amountInMaximum: limit
                 });
-
             try router.exactOutput(params) returns (uint res) {
                 result = res;
             } catch {
@@ -95,7 +94,7 @@ contract Strat is UniSwapper, Math {
 
     function fill_flip(bytes32 i, address u) external {
         Vat(bank).flash(address(this), abi.encodeWithSelector(
-            Strat.bail.selector, i, u, msg.sender
+            Strat.flip.selector, i, u, msg.sender
         ));
     }
 
@@ -111,15 +110,18 @@ contract Strat is UniSwapper, Math {
         ));
     }
 
-    function bail(bytes32 i, address u, address usr) external {
+    function flip(bytes32 i, address u, address usr) external {
         Vat(bank).drip(i);
         address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
         uint ricobefore = rico.balanceOf(address(this));
-        Vow(bank).bail(i, u);
+        // UPDATE ONCE BAIL IS UPDATED TO DECODE
+        uint ink = uint(bytes32(abi.decode(Vow(bank).bail(i, u), (bytes))));
 
         // swap to replenish what was paid for the flip
         uint ricospent = ricobefore - rico.balanceOf(address(this));
-        uint ink = Gem(gem).balanceOf(address(this));
+        Gem(gem).approve(address(router), type(uint).max);
+        rico.approve(address(router), type(uint).max);
+        ricobefore = rico.balanceOf(address(this));
         uint res = _swap(
             gem, address(rico), address(this),
             SwapKind.EXACT_OUT, ricospent, ink

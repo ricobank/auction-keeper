@@ -10,7 +10,7 @@ remappings = [
     'gemfab/=lib/gemfab/src',
     'hardhat/=node_modules/hardhat/',
 ]
-fs_permissions = [{access = 'read', path = './lib/ricobank'}]
+fs_permissions = [{access = 'read', path = './lib/feedbase'}]
 optimizer=true
 optimizer-runs=10_000
 
