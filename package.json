@@ -7,7 +7,8 @@
     "lib": "lib"
   },
   "scripts": {
-    "initialize": "git submodule update --init --recursive && cd lib/ricobank && npm run initialize && cd - && npm i",
+    "initialize": "git submodule update --init --recursive && cd lib/ricobank && npm run initialize && cd - && npm i && npm run build:feedbase",
+    "build:feedbase": "cd lib/feedbase && npm run initialize && cd -",
     "test": "forge test --fork-block-number 16445606 -vv -f $RPC_URL",
     "js-test": "ts-mocha --timeout 100000 jstest/*",
     "build": "npx hardhat compile",

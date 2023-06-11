@@ -5,3 +5,4 @@
 [submodule "lib/feedbase"]
 	path = lib/feedbase
 	url = https://github.com/feedbase/feedbase.git
+	branch = main
