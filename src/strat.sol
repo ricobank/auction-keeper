@@ -113,7 +113,7 @@ contract Strat is UniSwapper, Math {
 
     function bail(bytes32 i, address u, address usr) external {
         Vat(bank).drip(i);
-        address gem = abi.decode(Vat(bank).gethi(i, 'gem', i), (address));
+        address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
         uint ricobefore = rico.balanceOf(address(this));
         Vow(bank).bail(i, u);
 

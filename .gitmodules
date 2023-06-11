@@ -2,3 +2,6 @@
 	path = lib/ricobank
 	url = https://github.com/ricobank/ricobank
 	branch = testnet
+[submodule "lib/feedbase"]
+	path = lib/feedbase
+	url = https://github.com/feedbase/feedbase.git

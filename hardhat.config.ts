@@ -11,6 +11,7 @@ import './lib/ricobank/task/deploy-mock-tokens'
 
 import './lib/ricobank/task/deploy-mock-dependencies'
 import './lib/ricobank/task/deploy-ricobank'
+import './task/deploy-strat'
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
