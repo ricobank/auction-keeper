@@ -123,7 +123,6 @@ contract StratTest is Test, RicoSetUp {
     }
 
     function test_fill_flap() public {
-        feedpush(RICO_RISK_TAG, bytes32(RAY), UINT256_MAX);
         Vat(bank).frob(gilk, self, abi.encodePacked(int(25000 * WAD)), int(25000 * WAD));
         skip(BANKYEAR);
         Vat(bank).drip(gilk);
@@ -132,12 +131,27 @@ contract StratTest is Test, RicoSetUp {
         uint riskbefore = risk.balanceOf(self);
         assertEq(rico.balanceOf(address(strat)), 0);
         assertEq(risk.balanceOf(address(strat)), 0);
+        feedpush(RICO_RISK_TAG, bytes32(RAY), UINT256_MAX);
         strat.fill_flap();
-        assertGe(rico.balanceOf(self), ricobefore);
-        assertGe(risk.balanceOf(self), riskbefore);
+        assertGt(rico.balanceOf(self), ricobefore);
+        assertEq(risk.balanceOf(self), riskbefore);
     }
 
     function test_fill_flop() public {
+        skip(BANKYEAR);
 
+        feedpush(grtag, bytes32(RAY * 2), UINT256_MAX);
+        Vat(bank).frob(gilk, self, abi.encodePacked(int(25000 * WAD)), int(25000 * WAD));
+        feedpush(grtag, bytes32(0), UINT256_MAX);
+        Vow(bank).bail(gilk, self);
+
+        uint ricobefore = rico.balanceOf(self);
+        uint riskbefore = risk.balanceOf(self);
+        assertEq(rico.balanceOf(address(strat)), 0);
+        assertEq(risk.balanceOf(address(strat)), 0);
+        feedpush(RISK_RICO_TAG, bytes32(RAY), UINT256_MAX);
+        strat.fill_flop();
+        assertEq(rico.balanceOf(self), ricobefore);
+        assertGt(risk.balanceOf(self), riskbefore);
     }
 }
