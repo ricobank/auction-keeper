@@ -12,6 +12,7 @@ import './lib/ricobank/task/deploy-mock-tokens'
 import './lib/ricobank/task/deploy-mock-dependencies'
 import './lib/ricobank/task/deploy-ricobank'
 import './task/deploy-strat'
+import './task/schedule'
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
