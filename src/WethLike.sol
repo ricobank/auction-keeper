@@ -7,5 +7,5 @@ interface WethLike {
     function transfer(address,uint) external;
     function transferFrom(address,address,uint) external;
     function deposit() payable external;
-    function balanceOf(address) external;
+    function balanceOf(address) external view returns (uint);
 }

@@ -37,7 +37,7 @@ export default {
           blockGasLimit: 10000000000000,
           forking: {
               url: process.env["RPC_URL"],
-              blockNumber: 16445606,
+              blockNumber: 17501364,
               chainId: 1,
           },
           accounts: {
