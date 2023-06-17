@@ -119,7 +119,7 @@ contract StratTest is Test, RicoSetUp {
         assertEq(gold.balanceOf(address(strat)), 0);
         strat.fill_flip(gilk, self);
         assertGe(rico.balanceOf(self), ricobefore);
-        assertGe(gold.balanceOf(self), goldbefore);
+        assertGt(gold.balanceOf(self), goldbefore);
     }
 
     function test_fill_flap() public {

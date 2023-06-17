@@ -1,4 +1,5 @@
 import { task } from 'hardhat/config'
+import '@nomiclabs/hardhat-ethers'
 
 const debug = require('debug')('ricobank:task')
 const dpack = require('@etherpacks/dpack')
@@ -37,7 +38,7 @@ task('deploy-strat', '')
     const pack = (await pb.merge(deps)).build()
     if (args.writepack) {
         const outfile = require('path').join(
-            __dirname, `../pack/ricobank_${hre.network.name}.dpack.json`
+            __dirname, `../pack/strat_${hre.network.name}.dpack.json`
         )
         const packstr = JSON.stringify(pack, null, 2)
         require('fs').writeFileSync(outfile, packstr)

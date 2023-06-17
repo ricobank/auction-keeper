@@ -7,7 +7,6 @@
   "include": [
     "task/**/*.ts",
     "test/**/*.ts",
-    "hardhat.config.ts",
     "jstest"
   ]
 }
