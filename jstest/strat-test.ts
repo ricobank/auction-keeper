@@ -20,7 +20,7 @@ const TAG = Buffer.from('feed'.repeat(16), 'hex')
 let worker
 
 let fb, bank, strat, keeper, ploker, weth, rico, mdn, dapp, divider
-let nfpm, factory, router
+let nfpm, factory, router, risk
 let ALI, BOB, CAT
 
 const create_path = (tokens, fees) => {
@@ -114,6 +114,7 @@ describe('keeper', () => {
         ploker = dapp.ploker
         weth = await ethers.getContractAt('WethLike', dapp.weth.address)
         rico = dapp.rico
+        risk = dapp.risk
         mdn = dapp.mdn
         divider = dapp.divider
         nfpm = dapp.nonfungiblePositionManager
@@ -127,25 +128,31 @@ describe('keeper', () => {
               flaptime: '2500',
               ilks: 'weth',
               tol: ray(0.1),
-              minrush: ray(1.2)
+              minrush: ray(1.2),
+              expected_rico: wad(10),
+              expected_risk: wad(10)
           }
         )
 
-        let {fore, rear} = create_path(
-          [weth.address, dapp.dai.address, rico.address], [500, 500]
-        )
 
-
-        debug('set strat path and router')
-        await send(strat.setPath, weth.address, rico.address, fore, rear)
+        debug('set strat router+path')
         await send(strat.setSwapRouter, dapp.swapRouter.address)
+        let {fore, rear} = create_path([weth.address, dapp.dai.address, rico.address], [500, 500])
+        await send(strat.setPath, weth.address, rico.address, fore, rear);
+        ({fore, rear} = create_path([rico.address, risk.address], [3000]))
+        await send(strat.setPath, rico.address, risk.address, fore, rear);
+        ({fore, rear} = create_path([risk.address, rico.address], [3000]))
+        await send(strat.setPath, risk.address, rico.address, fore, rear);
 
         debug('set weth feed')
         await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
+        await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
+        await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
         await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
 
         debug('mint some weth and rico, pull some dai from bot')
-        let dink = ethers.utils.solidityPack(["int256"], [amt])
 
         const botaddr = "0xA69babEF1cA67A37Ffaf7a485DfFF3382056e78C"
         await hh.network.provider.request({
@@ -162,13 +169,23 @@ describe('keeper', () => {
 
         debug('join pool')
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
-        await send(weth.deposit, {value: amt})
+        await send(weth.deposit, {value: amt.mul(2)})
+        let dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
         await join_pool({
             a1: { token: rico.address, amountIn: amt },
             a2: { token: dapp.dai.address, amountIn: amt },
             fee: 500,
             tickSpacing: 10
+        })
+        dink = ethers.utils.solidityPack(["int256"], [amt])
+        await send(bank.frob, b32('weth'), ALI, dink, amt)
+        await send(risk.mint, ALI, amt)
+        await join_pool({
+            a1: { token: rico.address, amountIn: amt },
+            a2: { token: risk.address, amountIn: amt },
+            fee: 3000,
+            tickSpacing: 60
         })
 
         await send(rico.approve, bank.address, ethers.constants.MaxUint256)
@@ -181,6 +198,7 @@ describe('keeper', () => {
 
         await send(bank.file, b32('par'), b32(wad(7)))
          */
+        await send(strat.grant)
 
         await snapshot(hh);
     })
@@ -193,7 +211,6 @@ describe('keeper', () => {
 
         await send(weth.deposit, {value: amt})
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
-        await send(ploker.ploke, b32('weth:rico'))
 
         let dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
@@ -206,5 +223,25 @@ describe('keeper', () => {
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
+    })
+
+    it('fill_flop', async () => {
+
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+        await send(weth.deposit, {value: amt})
+        await send(weth.approve, bank.address, ethers.constants.MaxUint256)
+
+        let dink = ethers.utils.solidityPack(["int256"], [amt])
+        let riskbefore = await risk.balanceOf(ALI)
+        await send(bank.frob, b32('weth'), ALI, dink, amt)
+        await send(fb.push, b32('weth:rico'), bn2b32(ray(0)), await gettime() * 2)
+        await send(bank.bail, b32('weth'), ALI)
+        await delay(5000)
+
+        want((await risk.balanceOf(ALI)).gt(riskbefore)).true
+    })
+
+    it('fill_flap', async () => {
     })
 })

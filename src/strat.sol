@@ -101,18 +101,21 @@ contract Strat is UniSwapper {
         Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flip.selector, i, u, msg.sender
         ));
+
     }
 
-    function fill_flop() external {
-        Vat(bank).flash(address(this), abi.encodeWithSelector(
+    function fill_flop() external returns (uint ricogain, uint riskgain) {
+        bytes memory data = Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flop.selector, msg.sender
         ));
+        (ricogain, riskgain) = abi.decode(data, (uint, uint));
     }
 
-    function fill_flap() external {
-        Vat(bank).flash(address(this), abi.encodeWithSelector(
+    function fill_flap() external returns (uint ricogain, uint riskgain) {
+        bytes memory data = Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flap.selector, msg.sender
         ));
+        (ricogain, riskgain) = abi.decode(data, (uint, uint));
     }
 
     function flip(bytes32 i, address u, address usr) external {
@@ -140,7 +143,7 @@ contract Strat is UniSwapper {
         Gem(gem).transfer(usr, Gem(gem).balanceOf(address(this)));
     }
 
-    function flap(address usr) external {
+    function flap(address usr) external returns (uint ricogain, uint riskgain) {
         uint ricobefore = rico.balanceOf(address(this));
         uint flaprico = rico.balanceOf(address(bank)) - Vat(bank).sin() / RAY;
         uint rush;  uint price;
@@ -170,14 +173,20 @@ contract Strat is UniSwapper {
         uint ricobal = rico.balanceOf(address(this));
         uint MINT = Vat(bank).MINT();
         if (ricobal < MINT) revert ErrFlap();
-        rico.transfer(usr, ricobal - MINT);
-        risk.transfer(usr, risk.balanceOf(address(this)));
+        ricogain = ricobal - MINT;
+        riskgain = risk.balanceOf(address(this));
+        rico.transfer(usr, ricogain);
+        risk.transfer(usr, riskgain);
     }
 
-    function flop(address usr) external {
+    function flop(address usr) external returns (uint ricogain, uint riskgain) {
         bytes32[] memory ilks = new bytes32[](0);
         uint ricobefore = rico.balanceOf(address(this));
+        uint riskbefore = risk.balanceOf(address(this));
         Vow(bank).keep(ilks);
+        if (risk.balanceOf(address(this)) == riskbefore) {
+            return (0, 0);
+        }
         uint ricospent = ricobefore - rico.balanceOf(address(this));
 
         uint res = _swap(
@@ -189,8 +198,11 @@ contract Strat is UniSwapper {
         uint ricobal = rico.balanceOf(address(this));
         uint MINT = Vat(bank).MINT();
         if (ricobal < MINT) revert ErrFlop();
-        rico.transfer(usr, ricobal - MINT);
-        risk.transfer(usr, risk.balanceOf(address(this)));
+
+        ricogain = ricobal - MINT;
+        riskgain = risk.balanceOf(address(this));
+        rico.transfer(usr, ricogain);
+        risk.transfer(usr, riskgain);
     }
 
 
