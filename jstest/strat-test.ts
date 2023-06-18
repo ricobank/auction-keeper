@@ -123,9 +123,9 @@ describe('keeper', () => {
         await hh.run(
           'schedule',
           {
-              fliptime: '5000',
-              floptime: '5000',
-              flaptime: '2500',
+              fliptime: '2000',
+              floptime: '2000',
+              flaptime: '1000',
               ilks: 'weth',
               tol: ray(0.1),
               minrush: ray(1.2),
@@ -148,6 +148,8 @@ describe('keeper', () => {
         await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
+        await send(bank.file, b32('flappep'), bn2b32(ray(2)))
+
         await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
@@ -207,15 +209,14 @@ describe('keeper', () => {
         await revert(hh);
     })
 
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
     it('fill_flip', async () => {
 
         await send(weth.deposit, {value: amt})
-        await send(weth.approve, bank.address, ethers.constants.MaxUint256)
 
         let dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
-
-        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
         await delay(5000)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
@@ -227,10 +228,8 @@ describe('keeper', () => {
 
     it('fill_flop', async () => {
 
-        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
         await send(weth.deposit, {value: amt})
-        await send(weth.approve, bank.address, ethers.constants.MaxUint256)
 
         let dink = ethers.utils.solidityPack(["int256"], [amt])
         let riskbefore = await risk.balanceOf(ALI)
@@ -243,5 +242,20 @@ describe('keeper', () => {
     })
 
     it('fill_flap', async () => {
+
+        await send(weth.deposit, {value: amt})
+
+        let dink = ethers.utils.solidityPack(["int256"], [amt])
+        await send(bank.frob, b32('weth'), ALI, dink, amt)
+
+        await mine(hh, BANKYEAR)
+        let ricobefore = await rico.balanceOf(ALI)
+        await send(bank.drip, b32('weth'))
+        await delay(5000)
+        want((await rico.balanceOf(ALI)).gt(ricobefore)).true
+    })
+
+    after(async () => {
+        process.exit()
     })
 })

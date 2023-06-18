@@ -149,7 +149,8 @@ contract Strat is UniSwapper {
         uint rush;  uint price;
         {
             uint debt = Vat(bank).debt();
-            rush = rdiv(debt + flaprico, debt);
+            (uint flappep,) = Vow(bank).pep();
+            rush = (debt + flaprico) * flappep / debt;
             (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
             (bytes32 val,) = fb.pull(flapsrc, flaptag);
             price = uint(val);
@@ -161,17 +162,20 @@ contract Strat is UniSwapper {
         );
         if (res == SWAP_ERR) revert ErrSwap();
 
-        uint ricospent0 = ricobefore - rico.balanceOf(address(this));
         bytes32[] memory ilks = new bytes32[](0);
+        ricobefore = rico.balanceOf(address(this));
         Vow(bank).keep(ilks);
 
-        _swap(
-            address(risk), address(rico), address(this),
-            SwapKind.EXACT_OUT, ricospent0, type(uint).max
-        );
+        uint MINT = Vat(bank).MINT();
+        if (rico.balanceOf(address(this)) < MINT) {
+            res = _swap(
+                address(risk), address(rico), address(this),
+                SwapKind.EXACT_OUT, MINT - rico.balanceOf(address(this)), risk.balanceOf(address(this))
+            );
+            if (res == SWAP_ERR) revert ErrSwap();
+        }
 
         uint ricobal = rico.balanceOf(address(this));
-        uint MINT = Vat(bank).MINT();
         if (ricobal < MINT) revert ErrFlap();
         ricogain = ricobal - MINT;
         riskgain = risk.balanceOf(address(this));
@@ -204,9 +208,6 @@ contract Strat is UniSwapper {
         rico.transfer(usr, ricogain);
         risk.transfer(usr, riskgain);
     }
-
-
-
 }
 
 
