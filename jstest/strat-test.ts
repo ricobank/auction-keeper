@@ -96,6 +96,7 @@ const join_pool = async (args) => {
 describe('keeper', () => {
     let ali, bob, cat
     let amt = wad(10000)
+    let DELAY = 1000
     before(async () => {
         [ali, bob, cat] = await ethers.getSigners();
         [ALI, BOB, CAT] = [ali, bob, cat].map(signer => signer.address)
@@ -123,8 +124,8 @@ describe('keeper', () => {
         await hh.run(
           'schedule',
           {
-              fliptime: '2000',
-              floptime: '2000',
+              fliptime: '1000',
+              floptime: '1000',
               flaptime: '1000',
               ilks: 'weth',
               tol: ray(0.1),
@@ -148,7 +149,6 @@ describe('keeper', () => {
         await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
-        await send(bank.file, b32('flappep'), bn2b32(ray(2)))
 
         await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
@@ -218,9 +218,9 @@ describe('keeper', () => {
         let dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
 
-        await delay(5000)
+        await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
-        await delay(5000)
+        await delay(DELAY)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
@@ -236,12 +236,13 @@ describe('keeper', () => {
         await send(bank.frob, b32('weth'), ALI, dink, amt)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0)), await gettime() * 2)
         await send(bank.bail, b32('weth'), ALI)
-        await delay(5000)
+        await delay(DELAY)
 
         want((await risk.balanceOf(ALI)).gt(riskbefore)).true
     })
 
-    it('fill_flap', async () => {
+    it('fill_flap_pop', async () => {
+        await send(bank.file, b32('flappop'), bn2b32(ray(2)))
 
         await send(weth.deposit, {value: amt})
 
@@ -251,11 +252,31 @@ describe('keeper', () => {
         await mine(hh, BANKYEAR)
         let ricobefore = await rico.balanceOf(ALI)
         await send(bank.drip, b32('weth'))
-        await delay(5000)
+        await delay(DELAY * 2)
         want((await rico.balanceOf(ALI)).gt(ricobefore)).true
     })
 
+    it('fill_flap_pep', async () => {
+        let pep = ray(20)
+        await send(bank.file, b32('flappep'), bn2b32(pep))
+
+        await send(weth.deposit, {value: amt})
+
+        let dink = ethers.utils.solidityPack(["int256"], [amt])
+        await send(bank.frob, b32('weth'), ALI, dink, amt)
+
+        await mine(hh, BANKYEAR)
+        let ricobefore = await rico.balanceOf(ALI)
+        await send(bank.drip, b32('weth'))
+        await delay(DELAY * 2)
+        want((await rico.balanceOf(ALI)).gt(ricobefore)).true
+
+    })
+
+    /*
     after(async () => {
+        await delay(DELAY)
         process.exit()
     })
+   */
 })

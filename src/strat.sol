@@ -22,8 +22,6 @@ abstract contract UniSwapper is Ward, Math {
     // tokIn -> kind -> Path
     mapping(address tokIn => mapping(address tokOut => Path)) public paths;
 
-    uint256 public constant SWAP_ERR = type(uint256).max;
-
     ISwapRouter public router;
 
     function setPath(address tokIn, address tokOut, bytes calldata fore, bytes calldata rear)
@@ -38,37 +36,17 @@ abstract contract UniSwapper is Ward, Math {
         router = ISwapRouter(r);
     }
 
-    function _swap(address tokIn, address tokOut, address receiver, SwapKind kind, uint amt, uint limit)
-            internal returns (uint256 result) {
-        if (kind == SwapKind.EXACT_IN) {
-            ISwapRouter.ExactInputParams memory params =
-                ISwapRouter.ExactInputParams({
-                    path : paths[tokIn][tokOut].fore,
-                    recipient : receiver,
-                    deadline : block.timestamp,
-                    amountIn : amt,
-                    amountOutMinimum : limit
-                });
-            try router.exactInput(params) returns (uint res) {
-                result = res;
-            } catch {
-                result = SWAP_ERR;
-            }
-        } else {
-            ISwapRouter.ExactOutputParams memory params =
-                ISwapRouter.ExactOutputParams({
-                    path: paths[tokIn][tokOut].rear,
-                    recipient: receiver,
-                    deadline: block.timestamp,
-                    amountOut: amt,
-                    amountInMaximum: limit
-                });
-            try router.exactOutput(params) returns (uint res) {
-                result = res;
-            } catch {
-                result = SWAP_ERR;
-            }
-        }
+    function _swap(address tokIn, address tokOut, address receiver, uint amt, uint limit)
+      internal returns (uint256 result) {
+        ISwapRouter.ExactOutputParams memory params =
+            ISwapRouter.ExactOutputParams({
+                path: paths[tokIn][tokOut].rear,
+                recipient: receiver,
+                deadline: block.timestamp,
+                amountOut: amt,
+                amountInMaximum: limit
+            });
+        return router.exactOutput(params);
     }
 }
 
@@ -129,11 +107,7 @@ contract Strat is UniSwapper {
         uint ricospent = ricobefore - rico.balanceOf(address(this));
         Gem(gem).approve(address(router), type(uint).max);
         ricobefore = rico.balanceOf(address(this));
-        uint res = _swap(
-            gem, address(rico), address(this),
-            SwapKind.EXACT_OUT, ricospent, ink
-        );
-        if (res == SWAP_ERR) revert ErrSwap();
+        _swap(gem, address(rico), address(this), ricospent, ink);
 
         // give back the extra funds to caller
         uint ricobal = rico.balanceOf(address(this));
@@ -149,18 +123,17 @@ contract Strat is UniSwapper {
         uint rush;  uint price;
         {
             uint debt = Vat(bank).debt();
-            (uint flappep,) = Vow(bank).pep();
-            rush = (debt + flaprico) * flappep / debt;
+            (uint pep, uint pop) = Vow(bank).flapplot();
+            rush = (debt * pop + flaprico * pep) / debt;
             (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
             (bytes32 val,) = fb.pull(flapsrc, flaptag);
             price = uint(val);
         }
 
-        uint res = _swap(
+        _swap(
             address(rico), address(risk), address(this),
-            SwapKind.EXACT_OUT, flaprico * price / rush, rico.balanceOf(address(this))
+            flaprico * price / rush, rico.balanceOf(address(this))
         );
-        if (res == SWAP_ERR) revert ErrSwap();
 
         bytes32[] memory ilks = new bytes32[](0);
         ricobefore = rico.balanceOf(address(this));
@@ -168,11 +141,10 @@ contract Strat is UniSwapper {
 
         uint MINT = Vat(bank).MINT();
         if (rico.balanceOf(address(this)) < MINT) {
-            res = _swap(
+            _swap(
                 address(risk), address(rico), address(this),
-                SwapKind.EXACT_OUT, MINT - rico.balanceOf(address(this)), risk.balanceOf(address(this))
+                MINT - rico.balanceOf(address(this)), risk.balanceOf(address(this))
             );
-            if (res == SWAP_ERR) revert ErrSwap();
         }
 
         uint ricobal = rico.balanceOf(address(this));
@@ -193,11 +165,10 @@ contract Strat is UniSwapper {
         }
         uint ricospent = ricobefore - rico.balanceOf(address(this));
 
-        uint res = _swap(
+        _swap(
             address(risk), address(rico), address(this),
-            SwapKind.EXACT_OUT, ricospent, risk.balanceOf(address(this))
+            ricospent, risk.balanceOf(address(this))
         );
-        if (res == SWAP_ERR) revert ErrSwap();
 
         uint ricobal = rico.balanceOf(address(this));
         uint MINT = Vat(bank).MINT();
