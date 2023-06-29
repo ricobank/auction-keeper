@@ -1,5 +1,7 @@
 /// SPDX-License-Identifier: AGPL-3.0-or-later
 
+// copyright (c) 2023 halys
+
 pragma solidity ^0.8.19;
 import {Vow} from '../lib/ricobank/src/vow.sol';
 import {Vat} from '../lib/ricobank/src/vow.sol';

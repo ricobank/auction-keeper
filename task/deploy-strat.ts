@@ -1,3 +1,5 @@
+// copyright (c) 2023 halys
+
 import { task } from 'hardhat/config'
 import '@nomiclabs/hardhat-ethers'
 
