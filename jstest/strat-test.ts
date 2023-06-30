@@ -3,12 +3,13 @@ import { expect as want } from 'chai'
 
 import * as hh from 'hardhat'
 // @ts-ignore
-import { ethers } from 'hardhat'
+import { ethers, config } from 'hardhat'
 
 import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
 
 import { b32, snapshot, revert } from 'minihat'
+import { schedule } from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -100,6 +101,7 @@ describe('keeper', () => {
     before(async () => {
         [ali, bob, cat] = await ethers.getSigners();
         [ALI, BOB, CAT] = [ali, bob, cat].map(signer => signer.address)
+
         const pack = await hh.run(
             'deploy-strat',
             {
@@ -121,9 +123,10 @@ describe('keeper', () => {
         nfpm = dapp.nonfungiblePositionManager
         router = dapp.swapRouter
 
-        await hh.run(
-          'schedule',
-          {
+        await schedule(
+            {
+              signer: ali,
+              netname: hh.network.name,
               fliptime: '1000',
               floptime: '1000',
               flaptime: '1000',
@@ -132,9 +135,8 @@ describe('keeper', () => {
               minrush: ray(1.2),
               expected_rico: wad(10),
               expected_risk: wad(10)
-          }
+            }
         )
-
 
         debug('set strat router+path')
         await send(strat.setSwapRouter, dapp.swapRouter.address)
