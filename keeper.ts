@@ -2,15 +2,18 @@
 import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 import { b32, snapshot, revert } from 'minihat'
 const dpack = require('@etherpacks/dpack')
-
-//import * as ethers from 'ethers'
+import * as ethers from 'ethers'
 
 const debug = require('debug')('rico:schedule')
 const schedule = async (args) => {
     debug('schedule')
     debug('network name:', args.netname)
-    const ali = args.signer
-    const ethers = args.ethers
+    let ali = args.signer
+    if (!ali) {
+        const provider = new ethers.provider.JsonRpcProvider(args.url)
+        ali = ethers.Wallet.fromMnemonic(args.mnemonic).connect(provider)
+    }
+
     const pack = require(`./pack/strat_${args.netname}.dpack.json`)
     const dapp = await dpack.load(pack, ethers, ali)
     const bank = dapp.bank
@@ -58,24 +61,26 @@ const schedule = async (args) => {
         let [_curprice, time] = await fb.pull(fsrc, ftag)
         let curprice = ethers.BigNumber.from(_curprice)
         let diff = lastprice[i].sub(curprice).mul(ray(1)).div(lastprice[i])
-        if (diff.gt(args.tol)) {
+        if (diff.abs().gt(args.tol)) {
             // feed has changed...check all the currently tracked urns
             lastprice[i] = curprice
-            const us = Array.from(urns[i])
-            for (let u of us) {
-                let art = await bank.urns(i, u)
-                if (art == 0) {
-                    urns[i].delete(u)
-                } else {
-                    let [safe, rush, cut] = await bank.callStatic.safe(i, u)
-                    if (!safe && rush > args.minrush) {
-                        debug("send fill_flip")
-                        try {
-                            await send(strat.fill_flip, i, u)
-                            debug("done fill_flip")
-                        } catch (e) {
-                            debug('failed fill_flip')
-                            debug(e)
+            if (diff.gt(0)) {
+                const us = Array.from(urns[i])
+                for (let u of us) {
+                    let art = await bank.urns(i, u)
+                    if (art == 0) {
+                        urns[i].delete(u)
+                    } else {
+                        let [safe, rush, cut] = await bank.callStatic.safe(i, u)
+                        if (!safe && rush > args.minrush) {
+                            debug("send fill_flip")
+                            try {
+                                await send(strat.fill_flip, i, u)
+                                debug("done fill_flip")
+                            } catch (e) {
+                                debug('failed fill_flip')
+                                debug(e)
+                            }
                         }
                     }
                 }
@@ -143,4 +148,4 @@ const schedule = async (args) => {
 
 }
 
-export { schedule }
+export { schedule, run }

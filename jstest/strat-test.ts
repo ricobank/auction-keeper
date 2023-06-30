@@ -3,7 +3,7 @@ import { expect as want } from 'chai'
 
 import * as hh from 'hardhat'
 // @ts-ignore
-import { ethers } from 'hardhat'
+import { ethers, config } from 'hardhat'
 
 import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
@@ -101,6 +101,7 @@ describe('keeper', () => {
     before(async () => {
         [ali, bob, cat] = await ethers.getSigners();
         [ALI, BOB, CAT] = [ali, bob, cat].map(signer => signer.address)
+
         const pack = await hh.run(
             'deploy-strat',
             {
@@ -125,7 +126,6 @@ describe('keeper', () => {
         await schedule(
             {
               signer: ali,
-              ethers: ethers,
               netname: hh.network.name,
               fliptime: '1000',
               floptime: '1000',
