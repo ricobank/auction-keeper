@@ -1,41 +1,38 @@
-// copyright (c) 2023 halys
 
-import { task } from 'hardhat/config'
-import '@nomiclabs/hardhat-ethers'
-
-const debug = require('debug')('strat:task')
+import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
+import { b32, snapshot, revert } from 'minihat'
 const dpack = require('@etherpacks/dpack')
-import { b32, ray, rad, send, wad, BANKYEAR } from 'minihat'
 
-task('schedule', '')
-  .addParam('fliptime', 'flip time')
-  .addParam('flaptime', 'flap time')
-  .addParam('floptime', 'flop time')
-  .setAction(async (args, hre) => {
-    debug('network name in task:', hre.network.name)
-    const [ali] = await hre.ethers.getSigners()
-    const pack = require(`../pack/strat_${hre.network.name}.dpack.json`)
-    const dapp = await dpack.load(pack, hre.ethers, ali)
+//import * as ethers from 'ethers'
+
+const debug = require('debug')('rico:schedule')
+const schedule = async (args) => {
+    debug('schedule')
+    debug('network name:', args.netname)
+    const ali = args.signer
+    const ethers = args.ethers
+    const pack = require(`./pack/strat_${args.netname}.dpack.json`)
+    const dapp = await dpack.load(pack, ethers, ali)
     const bank = dapp.bank
     const strat = dapp.strat
     const mdn = dapp.mdn
     const fb = dapp.feedbase
 
-    await send(dapp.rico.approve, bank.address, hre.ethers.constants.MaxUint256)
-    await send(dapp.risk.approve, bank.address, hre.ethers.constants.MaxUint256)
+    await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
+    await send(dapp.risk.approve, bank.address, ethers.constants.MaxUint256)
 
     // initialize sets of urns
     const urns = {}
     args.ilks.split(';').forEach((ilk) => { 
-        urns[hre.ethers.utils.hexlify(b32(ilk))] = new Set()
+        urns[ethers.utils.hexlify(b32(ilk))] = new Set()
     })
 
     // listen for frob flog
     const frobsig = 'frob(bytes32,address,bytes,int256)'
-    const FLOG_FROB_TOPIC = hre.ethers.utils.id(frobsig)
+    const FLOG_FROB_TOPIC = ethers.utils.id(frobsig)
       .slice(0,10) + '00'.repeat(28)
     const decodeflog = (flog) => {
-        const fdata = hre.ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
+        const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
         return bank.interface.decodeFunctionData('frob', fdata)
     }
     bank.on(bank.filters.NewFlog(null, FLOG_FROB_TOPIC), async (flog) => { try {
@@ -52,14 +49,14 @@ task('schedule', '')
     // deleting the empty ones, and bailing the sufficiently unsafe ones
     let lastprice = {}
     for (let ilk in urns) {
-        lastprice[ilk] = hre.ethers.constants.MaxUint256
+        lastprice[ilk] = ethers.constants.MaxUint256
     }
     const doilk = async (i) => {
         if (urns[i].size == 0) return
         let fsrc = (await bank.callStatic.gethi(i, b32('fsrc'), i)).slice(0, 42)
         let ftag = await bank.callStatic.gethi(i, b32('ftag'), i)
         let [_curprice, time] = await fb.pull(fsrc, ftag)
-        let curprice = hre.ethers.BigNumber.from(_curprice)
+        let curprice = ethers.BigNumber.from(_curprice)
         let diff = lastprice[i].sub(curprice).mul(ray(1)).div(lastprice[i])
         if (diff.gt(args.tol)) {
             // feed has changed...check all the currently tracked urns
@@ -144,6 +141,6 @@ task('schedule', '')
     if (args.flaptime) scheduleflop()
     if (args.floptime) scheduleflap()
 
-})
+}
 
-
+export { schedule }
