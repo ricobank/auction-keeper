@@ -9,7 +9,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
 
 import { b32, snapshot, revert } from 'minihat'
-import { schedule } from '../keeper'
+import { schedule, urns, reseturns, geturns, fillurns} from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -173,9 +173,13 @@ describe('keeper', () => {
 
         debug('join pool')
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
-        await send(weth.deposit, {value: amt.mul(2)})
-        let dink = ethers.utils.solidityPack(["int256"], [amt])
-        await send(bank.frob, b32('weth'), ALI, dink, amt)
+        await send(weth.deposit, {value: amt.mul(4)})
+        await send(weth.transfer, BOB, amt.mul(4))
+        let dink = ethers.utils.solidityPack(["int256"], [amt.mul(2)])
+        await weth.connect(bob).callStatic.approve(bank.address, ethers.constants.MaxUint256)
+        await send(weth.connect(bob).approve, bank.address, ethers.constants.MaxUint256, {gasLimit: 10000000})
+        await send(bank.connect(bob).frob, b32('weth'), BOB, dink, amt.mul(2), {gasLimit: 100000000})
+        await send(rico.connect(bob).transfer, ALI, await rico.balanceOf(BOB), {gasLimit: 100000000})
         await join_pool({
             a1: { token: rico.address, amountIn: amt },
             a2: { token: dapp.dai.address, amountIn: amt },
@@ -183,7 +187,6 @@ describe('keeper', () => {
             tickSpacing: 10
         })
         dink = ethers.utils.solidityPack(["int256"], [amt])
-        await send(bank.frob, b32('weth'), ALI, dink, amt)
         await send(risk.mint, ALI, amt)
         await join_pool({
             a1: { token: rico.address, amountIn: amt },
@@ -208,12 +211,13 @@ describe('keeper', () => {
     })
 
     beforeEach(async () => {
-        await revert(hh);
+        await revert(hh)
     })
 
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
     it('fill_flip', async () => {
+        reseturns()
 
         await send(weth.deposit, {value: amt})
 
@@ -229,6 +233,7 @@ describe('keeper', () => {
     })
 
     it('fill_flop', async () => {
+        reseturns()
 
 
         await send(weth.deposit, {value: amt})
@@ -244,6 +249,7 @@ describe('keeper', () => {
     })
 
     it('fill_flap_pop', async () => {
+        reseturns()
         await send(bank.file, b32('flappop'), bn2b32(ray(2)))
 
         await send(weth.deposit, {value: amt})
@@ -259,6 +265,9 @@ describe('keeper', () => {
     })
 
     it('fill_flap_pep', async () => {
+        await fillurns()
+        reseturns()
+        await fillurns()
         let pep = ray(20)
         await send(bank.file, b32('flappep'), bn2b32(pep))
 
@@ -272,7 +281,6 @@ describe('keeper', () => {
         await send(bank.drip, b32('weth'))
         await delay(DELAY * 2)
         want((await rico.balanceOf(ALI)).gt(ricobefore)).true
-
     })
 
     /*
