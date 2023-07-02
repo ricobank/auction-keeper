@@ -9,7 +9,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
 
 import { b32, snapshot, revert } from 'minihat'
-import { schedule, urns, reseturns, geturns, fillurns} from '../keeper'
+import { schedule, reseturns, fillurns} from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -123,18 +123,27 @@ describe('keeper', () => {
         nfpm = dapp.nonfungiblePositionManager
         router = dapp.swapRouter
 
+        debug('set weth feed', ALI, b32('weth:rico').toString(), mdn.address)
+        await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
+        await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
+        await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
+        await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
+
         await schedule(
             {
               signer: ali,
               netname: hh.network.name,
-              fliptime: '1000',
-              floptime: '1000',
-              flaptime: '1000',
+              fliptime: DELAY,
+              floptime: DELAY * 2,
+              flaptime: DELAY * 2,
               ilks: 'weth',
               tol: ray(0.1),
               minrush: ray(1.2),
               expected_rico: wad(10),
-              expected_risk: wad(10)
+              expected_risk: wad(10),
+              poketime: '100'
             }
         )
 
@@ -146,15 +155,6 @@ describe('keeper', () => {
         await send(strat.setPath, rico.address, risk.address, fore, rear);
         ({fore, rear} = create_path([risk.address, rico.address], [3000]))
         await send(strat.setPath, risk.address, rico.address, fore, rear);
-
-        debug('set weth feed')
-        await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
-        await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
-        await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
-
-        await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
 
         debug('mint some weth and rico, pull some dai from bot')
 
@@ -217,7 +217,7 @@ describe('keeper', () => {
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
     it('fill_flip', async () => {
-        reseturns()
+        await fillurns(['weth'])
 
         await send(weth.deposit, {value: amt})
 
@@ -226,14 +226,14 @@ describe('keeper', () => {
 
         await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
-        await delay(DELAY)
+        await delay(DELAY * 5)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
     })
 
     it('fill_flop', async () => {
-        reseturns()
+        await fillurns(['weth'])
 
 
         await send(weth.deposit, {value: amt})
@@ -243,13 +243,13 @@ describe('keeper', () => {
         await send(bank.frob, b32('weth'), ALI, dink, amt)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0)), await gettime() * 2)
         await send(bank.bail, b32('weth'), ALI)
-        await delay(DELAY)
+        await delay(DELAY * 5)
 
         want((await risk.balanceOf(ALI)).gt(riskbefore)).true
     })
 
     it('fill_flap_pop', async () => {
-        reseturns()
+        await fillurns(['weth'])
         await send(bank.file, b32('flappop'), bn2b32(ray(2)))
 
         await send(weth.deposit, {value: amt})
@@ -265,9 +265,7 @@ describe('keeper', () => {
     })
 
     it('fill_flap_pep', async () => {
-        await fillurns()
-        reseturns()
-        await fillurns()
+        await fillurns(['weth'])
         let pep = ray(20)
         await send(bank.file, b32('flappep'), bn2b32(pep))
 

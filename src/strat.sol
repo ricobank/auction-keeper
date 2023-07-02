@@ -103,7 +103,7 @@ contract Strat is UniSwapper {
         address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
         uint ricobefore = rico.balanceOf(address(this));
         // UPDATE ONCE BAIL IS UPDATED TO DECODE
-        uint ink = uint(bytes32(abi.decode(Vow(bank).bail(i, u), (bytes))));
+        uint ink = uint(bytes32(abi.decode(Vat(bank).bail(i, u), (bytes))));
 
         // swap to replenish what was paid for the flip
         uint ricospent = ricobefore - rico.balanceOf(address(this));

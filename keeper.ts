@@ -8,109 +8,221 @@ let pack, dapp
 let bank, strat
 let mdn, fb, ploker
 let ali
-let urns = {}
-let lastprice = {}
+let ilkinfos : IlkInfos = {}
+type BigNumber = ethers.BigNumber
+const BigNumber = ethers.BigNumber
+
+let par : BigNumber
+
+type Ilk = string
+type Address = `0x${string}`
+
+type Urn = {
+    ink : BigNumber;
+    art : BigNumber;
+}
+type Urns = {[key: Address]: Urn}
+
+type IlkInfo = {
+    fsrc: Address;
+    ftag: string;
+    price: BigNumber;
+    urns: Urns;
+
+    // to quickly calculate expected profit
+    rack: BigNumber;
+    liqr: BigNumber;
+    fee: BigNumber;
+    chop: BigNumber;
+}
+
+type IlkInfos = {[key: Ilk]: IlkInfo}
+
+const xtos = (_ilk) : string => {
+    let ilk = _ilk
+    if (typeof(_ilk) == 'string') {
+        ilk = Buffer.from(_ilk.slice(2), 'hex')
+    }
+    let last = ilk.indexOf(0)
+    let sliced = last == -1 ? ilk : ilk.slice(0, last)
+    return sliced.toString('utf8')
+}
 
 // listen for frob flog
-const frobsig = 'frob(bytes32,address,bytes,int256)'
-const FROB_TOPIC = ethers.utils.id(frobsig)
-  .slice(0,10) + '00'.repeat(28)
-const decodefrob = (flog) => {
-    const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
-    return bank.interface.decodeFunctionData('frob', fdata)
+const sigs = {
+    frob: 'frob(bytes32,address,bytes,int256)',
+    bail: 'bail(bytes32,address)',
+    file: 'file(bytes32,bytes32)',
+    filk: 'filk(bytes32,bytes32,uint256)',
+    init: 'init(bytes32,address)'
 }
-const processfrob = async (flog) => {
-    try {
-        let indata = decodefrob(flog)
-        const art = await bank.urns(indata.i, indata.u) // TODO PUT BACK
-        if (indata.dart > 0) {
-            urns[indata.i].add(indata.u)
+const topic = (name) => ethers.utils.id(sigs[name]).slice(0,10) + '00'.repeat(28)
+
+
+const processflog = (flog) => {
+    const sig = flog.topics[1]
+    const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
+    if (sig == topic('frob')) {
+        const indata = bank.interface.decodeFunctionData('frob', fdata)
+        const i = xtos(indata.i)
+        const u = indata.u
+        const dink = ethers.utils.defaultAbiCoder.decode(['int'], indata.dink)[0]
+        const dart = BigNumber.from(indata.dart)
+        let info = ilkinfos[i]
+        if (dink.eq(0) && dart.eq(0)) return
+
+        if (info.urns[u] == undefined) {
+            info.urns[u] = {
+                ink: ethers.constants.Zero,
+                art: ethers.constants.Zero
+            }
         }
-    } catch (e) { 
-        console.error(e)
-        throw e 
+        let urn = info.urns[u]
+        urn.ink = urn.ink.add(dink)
+        urn.art = urn.ink.add(dart)
+    } else if (sig == topic('bail')) {
+        const indata = bank.interface.decodeFunctionData('bail', fdata)
+        const ilk = xtos(indata.i)
+        ilkinfos[ilk].urns[indata.u] = {
+            ink: ethers.constants.Zero,
+            art: ethers.constants.Zero
+        }
+    } else if (sig == topic('file')) {
+        const indata = bank.interface.decodeFunctionData('file', fdata)
+        const key = xtos(indata.key)
+        if (key == 'par') {
+            par = BigNumber.from(indata.val)
+        }
+    } else if (sig == topic('filk')) {
+        const indata = bank.interface.decodeFunctionData('filk', fdata)
+        const key = xtos(indata.key)
+        const i = xtos(indata.ilk)
+        let info = ilkinfos[i]
+        if (!info) return
+        const val = indata.val
+        switch (key) {
+            case 'line':
+            case 'rack':
+            case 'fee':
+            case 'chop': {
+                info[key] = BigNumber.from(val)
+                break
+            }
+            default: break
+        }
+    } else if (sig == topic('init')) {
+        const indata = bank.interface.decodeFunctionData('init', fdata)
+        const i = xtos(indata.ilk)
+        let info = ilkinfos[i]
+        if (!info) return
+        info.rack = ray(1)
+        info.liqr = ray(1)
+        info.fee = ray(1)
+        info.chop = ethers.constants.Zero
     }
 }
 
-const onfrob = () => {
-    bank.on(bank.filters.NewFlog(null, FROB_TOPIC), async (flog) => { 
-        await processfrob(flog)
-    })
-}
-
-// listen for bail flog
-const bailsig = 'bail(bytes32,address)'
-const BAIL_TOPIC = ethers.utils.id(bailsig)
-  .slice(0,10) + '00'.repeat(28)
-const decodebail = (flog) => {
+const processinit = (flog) => {
     const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
-    return bank.interface.decodeFunctionData('bail', fdata)
-}
-const processbail = (flog) => {
-    try {
-        let indata = decodebail(flog)
-        urns[indata.i].delete(indata.u)
-    } catch (e) {
-        console.error(e)
-        throw e
-    }
-}
-
-const onbail = () => {
-    bank.on(bank.filters.NewFlog(null, BAIL_TOPIC), async (flog) => {
-        processbail(flog)
-    })
+    const indata = bank.interface.decodeFunctionData('init', fdata)
+    const i = xtos(indata.ilk)
+    let info = ilkinfos[i]
+    if (!info) return
+    info.rack = ray(1)
+    info.liqr = ray(1)
+    info.fee = ray(1)
+    info.chop = ethers.constants.Zero
 }
 
 const gettime = async () => {
     return (await ali.provider.getBlock('latest')).timestamp
 }
 
+const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
+    // TODO expand
+    return sell.gt(0)
+}
+
 // check if an ilk's price feed has changed beyond some tolerance
 // if it has, loop through the tracked urns under said ilk,
 // deleting the empty ones, and bailing the sufficiently unsafe ones
-const scanilk = async (i, tol, minrush) => {
-    if (urns[i].size == 0) return
+const scanilk = async (i :string, tol, minrush, poketime) => {
+    let info :IlkInfo = ilkinfos[i]
+    if (Object.keys(info.urns).length == 0) return []
+    let fsrc = info.fsrc
+    let ftag = info.ftag
 
-    // src and tag of feed to pull from
-    let fsrc = (await bank.callStatic.gethi(i, b32('fsrc'), i)).slice(0, 42)
-    let ftag = await bank.callStatic.gethi(i, b32('ftag'), i)
-
-    let [_curprice, time] = await fb.pull(fsrc, ftag)
-    let curprice = ethers.BigNumber.from(_curprice)
-    if (time < Math.ceil(Date.now() / 1000)) {
-        await ploker.ploke(ftag)
+    let [_curprice, feedtime] = await fb.pull(fsrc, ftag)
+    let curprice = BigNumber.from(_curprice)
+    let curtime = Math.ceil(Date.now() / 1000)
+    /*
+    if (feedtime < curtime) {
+        await send(ploker.ploke, ftag)
     }
 
-    let diff = lastprice[i].sub(curprice).mul(ray(1)).div(lastprice[i])
+    if (curtime - await bank.tau() > poketime) {
+        try {
+            await ploker.ploke(ftag)
+        } catch (e) {
+            console.error(e)
+        }
+        await send(bank.poke, {gasLimit: 100000000})
+    }
+   */
+
+    let diff = info.price.sub(curprice).mul(ray(1)).div(info.price)
+    let proms = []
     if (diff.abs().gt(tol)) {
         // feed has changed...check all the currently tracked urns
-        lastprice[i] = curprice
+        info.price = curprice
         if (diff.gt(0)) {
-            const us = Array.from(urns[i])
-            for (let u of us) {
-                let art = await bank.urns(i, u)
-                if (art == 0) {
-                    urns[i].delete(u)
-                } else {
-                    let [safe, rush, cut] = await bank.callStatic.safe(i, u)
-                    if (!safe && rush > minrush) {
-                        debug("send fill_flip")
-                        try {
-                            await send(strat.fill_flip, i, u)
-                            debug("done fill_flip")
-                        } catch (e) {
-                            debug('failed fill_flip')
-                            debug(e)
+            for (let u in info.urns) {
+                let urn = info.urns[u]
+                //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
+                let rush
+                // div by ray once for each rmul in vat safe
+                debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
+                debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
+                let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
+                let cut = urn.ink.mul(info.price)
+                debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
+                if (tab.gt(cut)) {
+                    // unsafe
+                    rush = tab.div(cut).mul(ray(1))
+                    debug(`    rush=${rush}, minrush=${minrush}`)
+                    if (rush.gt(minrush)) {
+                        // check expected profit
+                        let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
+                        let earn = cut.div(rush)
+                        let sell = urn.ink
+                        if (earn.gt(bill)) {
+                            sell = bill.mul(sell).div(earn);
+                            earn = bill
+                        }
+
+                        if (profitable(i, sell, earn)) {
+                            proms.push(new Promise(async (resolve, reject) => {
+                                let res
+                                try {
+                                    res = await strat.fill_flip(b32(i), u)
+                                    debug(`fill_flip success on urn (${i},${u})`)
+                                } catch (e) {
+                                    debug(`failed to flip urn (${i}, ${u})`)
+                                }
+                                resolve(res)
+                            }))
+                            debug('    pushed fill_flip')
                         }
                     }
                 }
             }
         }
     }
+
+    return proms
 }
 
-const debug = require('debug')('rico:schedule')
+const debug = require('debug')('keeper')
 const schedule = async (args) => {
     debug('schedule')
     debug('network name:', args.netname)
@@ -131,26 +243,39 @@ const schedule = async (args) => {
     await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
     await send(dapp.risk.approve, bank.address, ethers.constants.MaxUint256)
 
-    // initialize sets of urns
-    args.ilks.split(';').forEach((ilk) => { 
-        urns[ethers.utils.hexlify(b32(ilk))] = new Set()
-    })
-
-    for (let ilk in urns) {
-        lastprice[ilk] = ethers.constants.MaxUint256
+    let ilks = args.ilks.split(';')
+    for (let i of ilks) {
+        const bankilk = bank.ilks(b32(i))
+        const fsrc = (await bank.callStatic.gethi(b32(i), b32('fsrc'), b32(i))).slice(0, 42)
+        const ftag = await bank.callStatic.gethi(b32(i), b32('ftag'), b32(i))
+        ilkinfos[i] = {
+            // src and tag of feed to pull from
+            fsrc,
+            ftag,
+            // last pulled price
+            price: BigNumber.from((await fb.pull(fsrc, ftag))[0]),
+            urns: {},
+            rack: bankilk.rack,
+            liqr: bankilk.liqr,
+            fee: bankilk.fee,
+            chop: bankilk.chop
+        }
     }
 
-    onfrob()
-    onbail()
+    bank.on(bank.filters.NewFlog(null), async (flog) => { 
+        processflog(flog)
+    })
 
     const scheduleflip = async () => {
         try {
-            for (let ilk in urns) {
-                await scanilk(ilk, args.tol, args.minrush)
+            let proms = []
+            for (let i in ilkinfos) {
+                proms = proms.concat(await scanilk(i, args.tol, args.minrush, args.poketime))
             }
+            await Promise.all(proms)
         } catch (e) {
             debug('doflip failed:')
-            debug(e)
+            //debug(e)
         }
         setTimeout(scheduleflip, args.fliptime)
     }
@@ -165,7 +290,7 @@ const schedule = async (args) => {
             }
         } catch (e) {
             debug('doflop failed:')
-            debug(e)
+            //debug(e)
         }
         setTimeout(scheduleflop, args.floptime)
     }
@@ -180,7 +305,7 @@ const schedule = async (args) => {
             }
         } catch (e) {
             debug('doflap failed:')
-            debug(e)
+            //debug(e)
         }
         setTimeout(scheduleflap, args.flaptime)
     }
@@ -191,21 +316,25 @@ const schedule = async (args) => {
 
 }
 
-const reseturns = () => {
-    for (let i in urns) {
-        urns[i] = new Set()
+const reseturns = (ilks) => ilks.forEach(i => { ilkinfos[i].urns = {} })
+
+const fillurns = async (ilks) => {
+    reseturns(ilks)
+    ilks.forEach(i => ilkinfos[i].urns = {})
+
+    const flogs = await bank.queryFilter(
+        bank.filters.NewFlog(
+            null, [topic('frob'), topic('bail'), topic('file'), topic('filk'), topic('init')]
+        )
+    )
+    for (let flog of flogs) {
+        try {
+            processflog(flog)
+        } catch (e) {
+            debug('fillurns: failed to process flog')
+            //debug(e)
+        }
     }
 }
 
-const fillurns = async () => {
-    let flogs = await bank.queryFilter(bank.filters.NewFlog(null, FROB_TOPIC))
-    for (let flog of flogs) await processfrob(flog)
-
-    flogs = await bank.queryFilter(bank.filters.NewFlog(null, BAIL_TOPIC))
-    for (let flog of flogs) await processbail(flog)
-
-}
-
-const geturns = () => urns
-
-export { schedule, reseturns, urns, fillurns, geturns }
+export { schedule, reseturns, fillurns }
