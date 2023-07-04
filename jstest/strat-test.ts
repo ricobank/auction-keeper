@@ -9,7 +9,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
 
 import { b32, snapshot, revert } from 'minihat'
-import { schedule, reseturns, fillurns} from '../keeper'
+import { run_keeper } from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -131,22 +131,6 @@ describe('keeper', () => {
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
 
-        await schedule(
-            {
-              signer: ali,
-              netname: hh.network.name,
-              fliptime: DELAY,
-              floptime: DELAY * 2,
-              flaptime: DELAY * 2,
-              ilks: 'weth',
-              tol: ray(0.1),
-              minrush: ray(1.2),
-              expected_rico: wad(10),
-              expected_risk: wad(10),
-              poketime: '100'
-            }
-        )
-
         debug('set strat router+path')
         await send(strat.setSwapRouter, dapp.swapRouter.address)
         let {fore, rear} = create_path([weth.address, dapp.dai.address, rico.address], [500, 500])
@@ -155,6 +139,24 @@ describe('keeper', () => {
         await send(strat.setPath, rico.address, risk.address, fore, rear);
         ({fore, rear} = create_path([risk.address, rico.address], [3000]))
         await send(strat.setPath, risk.address, rico.address, fore, rear);
+
+        let args = {
+          signer: ali,
+          netname: hh.network.name,
+          fliptime: DELAY,
+          floptime: DELAY * 2,
+          flaptime: DELAY * 2,
+          ilks: 'weth',
+          tol: ray(0.1),
+          minrush: ray(1.2),
+          expected_rico: wad(10),
+          expected_risk: wad(10),
+          poketime: '100'
+        }
+
+        await run_keeper(args)
+
+
 
         debug('mint some weth and rico, pull some dai from bot')
 
@@ -217,7 +219,6 @@ describe('keeper', () => {
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
     it('fill_flip', async () => {
-        await fillurns(['weth'])
 
         await send(weth.deposit, {value: amt})
 
@@ -226,14 +227,13 @@ describe('keeper', () => {
 
         await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
-        await delay(DELAY * 5)
+        await delay(DELAY * 2)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
     })
 
     it('fill_flop', async () => {
-        await fillurns(['weth'])
 
 
         await send(weth.deposit, {value: amt})
@@ -249,7 +249,6 @@ describe('keeper', () => {
     })
 
     it('fill_flap_pop', async () => {
-        await fillurns(['weth'])
         await send(bank.file, b32('flappop'), bn2b32(ray(2)))
 
         await send(weth.deposit, {value: amt})
@@ -265,7 +264,6 @@ describe('keeper', () => {
     })
 
     it('fill_flap_pep', async () => {
-        await fillurns(['weth'])
         let pep = ray(20)
         await send(bank.file, b32('flappep'), bn2b32(pep))
 
