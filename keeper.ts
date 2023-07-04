@@ -11,8 +11,23 @@ let ali
 let ilkinfos : IlkInfos = {}
 type BigNumber = ethers.BigNumber
 const BigNumber = ethers.BigNumber
+const PALM = [
+    'NewPalm0(bytes32,bytes32)',
+    'NewPalm1(bytes32,bytes32,bytes32)',
+    'NewPalm2(bytes32,bytes32,bytes32,bytes32)',
+    'NewPalmBytes2(bytes32,bytes32,bytes32,bytes)'
+].map(ethers.utils.id)
+const [PALM0, PALM1, PALM2, PALMBYTES2] = PALM
+const FLOG = ethers.utils.id('NewFlog(address,bytes4,bytes)')
+
+
 
 let par : BigNumber
+let way : BigNumber
+let tau : BigNumber
+let how : BigNumber
+let tip : Address
+let tag : string
 
 type Ilk = string
 type Address = `0x${string}`
@@ -59,9 +74,95 @@ const sigs = {
 const topic = (name) => ethers.utils.id(sigs[name]).slice(0,10) + '00'.repeat(28)
 
 
-const processflog = (flog) => {
-    const sig = flog.topics[1]
-    const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
+const processpalm = (_palm) => {
+    const id = _palm.topics[0]
+    if (id == PALM0) {
+        const palm = bank.interface.decodeEventLog('NewPalm0', _palm.data, _palm.topics)
+        const key = xtos(palm.key)
+        const val = palm.val
+        if (key == 'par') {
+            par = BigNumber.from(val)
+        } else if (key == 'way') {
+            way = BigNumber.from(val)
+        } else if (key == 'tau') {
+            tau = BigNumber.from(val)
+        } else if (key == 'how') {
+            how = BigNumber.from(val)
+        } else if (key == 'tip') {
+            tip = val.slice(0, 42)
+        } else if (key == 'tag') {
+            tag = xtos(val)
+        } else {
+            debug(`palm0: ${key} not handled`)
+        }
+    } else if (id == PALM1) {
+        const palm = bank.interface.decodeEventLog('NewPalm1', _palm.data, _palm.topics)
+        const key = xtos(palm.key)
+        const val = palm.val
+        const idx0 = xtos(palm.idx0)
+        if (!ilkinfos[idx0]) return
+        const info : IlkInfo = ilkinfos[idx0]
+        if (key == 'rack') {
+            info.rack = BigNumber.from(val)
+        } else if (key == 'liqr') {
+            info.liqr = BigNumber.from(val)
+        } else if (key == 'fee') {
+            info.fee = BigNumber.from(val)
+        } else if (key == 'chop') {
+            info.chop = BigNumber.from(val)
+        } else {
+            debug(`palm1: ${key} not handled`)
+        }
+    } else if (id == PALM2) {
+        const palm = bank.interface.decodeEventLog('NewPalm2', _palm.data, _palm.topics)
+        const key = xtos(palm.key)
+        const val = palm.val
+        const idx0 = palm.idx0
+        const idx1 = palm.idx1
+        const i = xtos(idx0)
+        const u = idx1.slice(0, 42)
+        if (key == 'art') {
+            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
+            ilkinfos[i].urns[u].art = BigNumber.from(val)
+        } else {
+            debug(`palm2: ${key} not handled`)
+        }
+    } else if (id == PALMBYTES2) {
+        const palm = bank.interface.decodeEventLog('NewPalmBytes2', _palm.data, _palm.topics)
+        const key = xtos(palm.key)
+        const val = palm.val
+        const idx0 = palm.idx0
+        const idx1 = palm.idx1
+        const i = xtos(idx0)
+        const u = idx1.slice(0, 42)
+        if (key == 'ink') {
+            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
+            ilkinfos[i].urns[u].ink = BigNumber.from(val)
+        } else {
+            debug(`palmbytes2: ${key} not handled`)
+        }
+    } else {
+        debug(`palm: ${id} unrecognized (palms are ${PALM})`)
+    }
+}
+
+/*
+const processflog = (_flog) => {
+    const flog = bank.interface.decodeEventLog('NewFlog', _flog.data, _flog.topics)
+    const sig = flog.sig
+    const fdata = flog.data
+    if (sig == topic('init')) {
+        const indata = bank.interface.decodeFunctionData('init', fdata)
+        const i = xtos(indata.ilk)
+        let info = ilkinfos[i]
+        if (!info) return
+        info.rack = ray(1)
+        info.liqr = ray(1)
+        info.fee = ray(1)
+        info.chop = ethers.constants.Zero
+
+    }
+
     if (sig == topic('frob')) {
         const indata = bank.interface.decodeFunctionData('frob', fdata)
         const i = xtos(indata.i)
@@ -92,6 +193,16 @@ const processflog = (flog) => {
         const key = xtos(indata.key)
         if (key == 'par') {
             par = BigNumber.from(indata.val)
+        } else if (key == 'way') {
+            way = BigNumber.from(indata.val)
+        } else if (key == 'tau') {
+            tau = BigNumber.from(indata.val)
+        } else if (key == 'how') {
+            how = BigNumber.from(indata.val)
+        } else if (key == 'tip') {
+            tip = indata.val
+        } else if (key == 'tag') {
+            tag = xtos(indata.val)
         }
     } else if (sig == topic('filk')) {
         const indata = bank.interface.decodeFunctionData('filk', fdata)
@@ -100,39 +211,11 @@ const processflog = (flog) => {
         let info = ilkinfos[i]
         if (!info) return
         const val = indata.val
-        switch (key) {
-            case 'line':
-            case 'rack':
-            case 'fee':
-            case 'chop': {
-                info[key] = BigNumber.from(val)
-                break
-            }
-            default: break
+        if (key == 'line' || key == 'rack' || key == 'fee' || key == 'chop') {
+            info[key] = BigNumber.from(val)
         }
-    } else if (sig == topic('init')) {
-        const indata = bank.interface.decodeFunctionData('init', fdata)
-        const i = xtos(indata.ilk)
-        let info = ilkinfos[i]
-        if (!info) return
-        info.rack = ray(1)
-        info.liqr = ray(1)
-        info.fee = ray(1)
-        info.chop = ethers.constants.Zero
-    }
 }
-
-const processinit = (flog) => {
-    const fdata = ethers.utils.defaultAbiCoder.decode(['bytes'], flog.data)[0]
-    const indata = bank.interface.decodeFunctionData('init', fdata)
-    const i = xtos(indata.ilk)
-    let info = ilkinfos[i]
-    if (!info) return
-    info.rack = ray(1)
-    info.liqr = ray(1)
-    info.fee = ray(1)
-    info.chop = ethers.constants.Zero
-}
+*/
 
 const gettime = async () => {
     return (await ali.provider.getBlock('latest')).timestamp
@@ -152,25 +235,26 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
     let fsrc = info.fsrc
     let ftag = info.ftag
 
-    let [_curprice, feedtime] = await fb.pull(fsrc, ftag)
+    let [_curprice, feedtime] = await fb.pull(fsrc, b32(ftag))
     let curprice = BigNumber.from(_curprice)
-    let curtime = Math.ceil(Date.now() / 1000)
-    /*
-    if (feedtime < curtime) {
-        await send(ploker.ploke, ftag)
+    let curtime = BigNumber.from(Math.ceil(Date.now() / 1000))
+    if (feedtime.lt(curtime)) {
+        await send(ploker.ploke, b32(ftag))
+        ;[_curprice, feedtime] = await fb.pull(fsrc, b32(ftag))
+        curprice = BigNumber.from(_curprice)
     }
 
-    if (curtime - await bank.tau() > poketime) {
+    if (curtime.sub(tau).gt(poketime)) {
+        // TODO maybe roll this into strat?
         try {
-            await ploker.ploke(ftag)
+            await send(ploker.ploke, b32(tag))
         } catch (e) {
-            console.error(e)
+            debug(e)
         }
         await send(bank.poke, {gasLimit: 100000000})
     }
-   */
 
-    let diff = info.price.sub(curprice).mul(ray(1)).div(info.price)
+    let diff = info.price.sub(curprice).mul(ray(1)).div(info.price == 0 ? 1 : info.price)
     let proms = []
     if (diff.abs().gt(tol)) {
         // feed has changed...check all the currently tracked urns
@@ -184,19 +268,19 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
                 debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
                 debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
                 let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
-                let cut = urn.ink.mul(info.price)
+                let cut = urn.ink.mul(curprice)
                 debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
                 if (tab.gt(cut)) {
                     // unsafe
-                    rush = tab.div(cut).mul(ray(1))
+                    rush = tab.div(cut == 0 ? 1 : cut).mul(ray(1))
                     debug(`    rush=${rush}, minrush=${minrush}`)
                     if (rush.gt(minrush)) {
                         // check expected profit
                         let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
-                        let earn = cut.div(rush)
+                        let earn = cut.div(rush == 0 ? 1 : rush)
                         let sell = urn.ink
                         if (earn.gt(bill)) {
-                            sell = bill.mul(sell).div(earn);
+                            sell = bill.mul(sell).div(earn == 0 ? 1 : earn);
                             earn = bill
                         }
 
@@ -205,6 +289,7 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
                                 let res
                                 try {
                                     res = await strat.fill_flip(b32(i), u)
+                                    await res.wait()
                                     debug(`fill_flip success on urn (${i},${u})`)
                                 } catch (e) {
                                     debug(`failed to flip urn (${i}, ${u})`)
@@ -223,7 +308,9 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
 }
 
 const debug = require('debug')('keeper')
-const schedule = async (args) => {
+
+const run_keeper = async (args) => {
+
     debug('schedule')
     debug('network name:', args.netname)
     ali = args.signer
@@ -240,6 +327,12 @@ const schedule = async (args) => {
     fb = dapp.feedbase
     ploker = dapp.ploker
 
+    const filter = {
+        address: bank.address,
+        topics: [PALM.concat([FLOG])]
+    }
+ 
+
     await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
     await send(dapp.risk.approve, bank.address, ethers.constants.MaxUint256)
 
@@ -247,13 +340,13 @@ const schedule = async (args) => {
     for (let i of ilks) {
         const bankilk = bank.ilks(b32(i))
         const fsrc = (await bank.callStatic.gethi(b32(i), b32('fsrc'), b32(i))).slice(0, 42)
-        const ftag = await bank.callStatic.gethi(b32(i), b32('ftag'), b32(i))
+        const ftag = xtos(await bank.callStatic.gethi(b32(i), b32('ftag'), b32(i)))
         ilkinfos[i] = {
             // src and tag of feed to pull from
             fsrc,
             ftag,
             // last pulled price
-            price: BigNumber.from((await fb.pull(fsrc, ftag))[0]),
+            price: BigNumber.from((await fb.pull(fsrc, b32(ftag)))[0]),
             urns: {},
             rack: bankilk.rack,
             liqr: bankilk.liqr,
@@ -261,9 +354,41 @@ const schedule = async (args) => {
             chop: bankilk.chop
         }
     }
+ 
 
-    bank.on(bank.filters.NewFlog(null), async (flog) => { 
-        processflog(flog)
+    par = await bank.par()
+    way = await bank.way()
+    tau = await bank.tau()
+    how = await bank.how()
+    tip = await bank.tip()
+    tag = xtos(await bank.tag())
+
+    ilks.forEach(i => ilkinfos[i].urns = {})
+    const events = await bank.queryFilter(filter)
+    for (let event of events) {
+        try {
+            if (event.topics[0] == FLOG) {
+                //processflog(event)
+            } else {
+                processpalm(event)
+            }
+        } catch (e) {
+            debug('run_keeper: failed to process event')
+            //debug(e)
+        }
+    }
+
+    bank.on(filter, async (event) => { 
+        try {
+            if (event.topics[0] == FLOG) {
+                //processflog(event)
+            } else {
+                processpalm(event)
+            }
+        } catch (e) {
+            debug('bank.on: failed to process event')
+            //debug(e)
+        }
     })
 
     const scheduleflip = async () => {
@@ -274,7 +399,7 @@ const schedule = async (args) => {
             }
             await Promise.all(proms)
         } catch (e) {
-            debug('doflip failed:')
+            debug('scanilk failed:')
             //debug(e)
         }
         setTimeout(scheduleflip, args.fliptime)
@@ -284,12 +409,10 @@ const schedule = async (args) => {
         try {
             let [ricogain, riskgain] = await strat.callStatic.fill_flop()
             if (ricogain > args.expected_rico || riskgain > args.expected_risk) {
-                debug("calling fill_flop")
                 await send(strat.fill_flop)
-                debug("done fill_flop")
             }
         } catch (e) {
-            debug('doflop failed:')
+            //debug('doflop failed:')
             //debug(e)
         }
         setTimeout(scheduleflop, args.floptime)
@@ -299,12 +422,10 @@ const schedule = async (args) => {
         try {
             let [ricogain, riskgain] = await strat.callStatic.fill_flap()
             if (ricogain > args.expected_rico || riskgain > args.expected_risk) {
-                debug("calling fill_flap")
                 await send(strat.fill_flap)
-                debug("done fill_flap")
             }
         } catch (e) {
-            debug('doflap failed:')
+            //debug('doflap failed:')
             //debug(e)
         }
         setTimeout(scheduleflap, args.flaptime)
@@ -313,28 +434,6 @@ const schedule = async (args) => {
     if (args.fliptime) scheduleflip()
     if (args.flaptime) scheduleflop()
     if (args.floptime) scheduleflap()
-
 }
 
-const reseturns = (ilks) => ilks.forEach(i => { ilkinfos[i].urns = {} })
-
-const fillurns = async (ilks) => {
-    reseturns(ilks)
-    ilks.forEach(i => ilkinfos[i].urns = {})
-
-    const flogs = await bank.queryFilter(
-        bank.filters.NewFlog(
-            null, [topic('frob'), topic('bail'), topic('file'), topic('filk'), topic('init')]
-        )
-    )
-    for (let flog of flogs) {
-        try {
-            processflog(flog)
-        } catch (e) {
-            debug('fillurns: failed to process flog')
-            //debug(e)
-        }
-    }
-}
-
-export { schedule, reseturns, fillurns }
+export { run_keeper }
