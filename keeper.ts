@@ -1,5 +1,5 @@
 
-import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
+import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine, RAY } from 'minihat'
 import { b32, snapshot, revert } from 'minihat'
 const dpack = require('@etherpacks/dpack')
 import * as ethers from 'ethers'
@@ -41,7 +41,6 @@ type Urns = {[key: Address]: Urn}
 type IlkInfo = {
     fsrc: Address;
     ftag: string;
-    price: BigNumber;
     urns: Urns;
 
     // to quickly calculate expected profit
@@ -50,6 +49,10 @@ type IlkInfo = {
     fee: BigNumber;
     chop: BigNumber;
 }
+
+type Feed = {val: BigNumber, ttl: BigNumber, dip: boolean }
+type Feeds = {[src: Address]: {[tag: string]: Feed}}
+let feeds : Feeds = {};
 
 type IlkInfos = {[key: Ilk]: IlkInfo}
 
@@ -146,10 +149,25 @@ const processpalm = (_palm) => {
     }
 }
 
-const processpush = (_push) => {
-    const push = bank.interface.decodeEventLog('Push', _push.data, _push.topics)
-
- 
+const processpush = (_push, tol) => {
+    const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
+    const src = push.src.toLowerCase()
+    const tag = xtos(push.tag)
+    if (!feeds[src]) {
+        feeds[src] = {}
+    }
+    if (!feeds[src][tag]) {
+        feeds[src][tag] = {val: ethers.constants.Zero, ttl: ethers.constants.MaxUint256, dip: false}
+    }
+    let nextval = BigNumber.from(push.val)
+    let nextttl = BigNumber.from(push.ttl)
+    let feed = feeds[src][tag]
+    if (tol > 0 && feed.val.gt(0)) {
+        // TODO this should accumulate a bit over time...
+        feed.dip = feed.val.sub(nextval).mul(RAY).div(feed.val).gt(tol)
+    }
+    feed.val = nextval
+    feed.ttl = nextttl
 }
 
 const gettime = async () => {
@@ -170,15 +188,7 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
     let fsrc = info.fsrc
     let ftag = info.ftag
 
-    let [_curprice, feedtime] = await fb.pull(fsrc, b32(ftag))
-    let curprice = BigNumber.from(_curprice)
-    let curtime = BigNumber.from(Math.ceil(Date.now() / 1000))
-    if (feedtime.lt(curtime)) {
-        await send(ploker.ploke, b32(ftag))
-        ;[_curprice, feedtime] = await fb.pull(fsrc, b32(ftag))
-        curprice = BigNumber.from(_curprice)
-    }
-
+    /*
     if (curtime.sub(tau).gt(poketime)) {
         // TODO maybe roll this into strat?
         try {
@@ -188,51 +198,53 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
         }
         await send(bank.poke, {gasLimit: 100000000})
     }
+   */
 
-    let diff = info.price.sub(curprice).mul(ray(1)).div(info.price.eq(0) ? 1 : info.price)
+    if (!feeds[info.fsrc] || !feeds[info.fsrc][info.ftag]) {
+        throw Error(`no feed for ${i}`)
+    }
+    let feed : Feed = feeds[info.fsrc][info.ftag]
     let proms = []
-    if (diff.abs().gt(tol)) {
+    if (feed.dip) {
         // feed has changed...check all the currently tracked urns
-        info.price = curprice
-        if (diff.gt(0)) {
-            for (let u in info.urns) {
-                let urn = info.urns[u]
-                //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
-                let rush
-                // div by ray once for each rmul in vat safe
-                debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
-                debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
-                let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
-                let cut = urn.ink.mul(curprice)
-                debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
-                if (tab.gt(cut)) {
-                    // unsafe
-                    rush = tab.div(cut.eq(0) ? 1 : cut).mul(ray(1))
-                    debug(`    rush=${rush}, minrush=${minrush}`)
-                    if (rush.gt(minrush)) {
-                        // check expected profit
-                        let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
-                        let earn = cut.div(rush.eq(0) ? 1 : rush)
-                        let sell = urn.ink
-                        if (earn.gt(bill)) {
-                            sell = bill.mul(sell).div(earn == 0 ? 1 : earn);
-                            earn = bill
-                        }
+        feed.dip = false
+        for (let u in info.urns) {
+            let urn = info.urns[u]
+            //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
+            let rush
+            // div by ray once for each rmul in vat safe
+            debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
+            debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
+            let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
+            let cut = urn.ink.mul(feed.val)
+            debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
+            if (tab.gt(cut)) {
+                // unsafe
+                rush = tab.div(cut.eq(0) ? 1 : cut).mul(ray(1))
+                debug(`    rush=${rush}, minrush=${minrush}`)
+                if (rush.gt(minrush)) {
+                    // check expected profit
+                    let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
+                    let earn = cut.div(rush.eq(0) ? 1 : rush)
+                    let sell = urn.ink
+                    if (earn.gt(bill)) {
+                        sell = bill.mul(sell).div(earn == 0 ? 1 : earn);
+                        earn = bill
+                    }
 
-                        if (profitable(i, sell, earn)) {
-                            proms.push(new Promise(async (resolve, reject) => {
-                                let res
-                                try {
-                                    res = await strat.fill_flip(b32(i), u)
-                                    await res.wait()
-                                    debug(`fill_flip success on urn (${i},${u})`)
-                                } catch (e) {
-                                    debug(`failed to flip urn (${i}, ${u})`)
-                                }
-                                resolve(res)
-                            }))
-                            debug('    pushed fill_flip')
-                        }
+                    if (profitable(i, sell, earn)) {
+                        proms.push(new Promise(async (resolve, reject) => {
+                            let res
+                            try {
+                                res = await strat.fill_flip(b32(i), u)
+                                await res.wait()
+                                debug(`fill_flip success on urn (${i},${u})`)
+                            } catch (e) {
+                                debug(`failed to flip urn (${i}, ${u})`)
+                            }
+                            resolve(res)
+                        }))
+                        debug('    pushed fill_flip')
                     }
                 }
             }
@@ -274,8 +286,6 @@ const run_keeper = async (args) => {
             // src and tag of feed to pull from
             fsrc,
             ftag,
-            // last pulled price
-            price: BigNumber.from((await fb.pull(fsrc, b32(ftag)))[0]),
             urns: {},
             rack: bankilk.rack,
             liqr: bankilk.liqr,
@@ -298,7 +308,7 @@ const run_keeper = async (args) => {
         address: bank.address,
         topics: [PALM.concat([FLOG])]
     }
-    const events = await bank.queryFilter(bankfilter)
+    let events = await bank.queryFilter(bankfilter)
     for (let event of events) {
         try {
             if (event.topics[0] == FLOG) {
@@ -327,15 +337,27 @@ const run_keeper = async (args) => {
 
     let ftags = ilks.map(i => ethers.utils.hexlify(b32(ilkinfos[i].ftag)))
     let fsrcs = ilks.map(i => ethers.utils.hexZeroPad(ilkinfos[i].fsrc, 32))
-    let fbfilter = {
+    const fbfilter = {
         address: fb.address,
         topics: [null,fsrcs,ftags]
     }
+    events = await fb.queryFilter(fbfilter)
+    for (let event of events) {
+        try {
+            processpush(event, args.tol)
+        } catch (e) {
+            debug('run_keeper: failed to process push')
+            //debug(e)
+        }
+    }
+
+
     fb.on(fbfilter, async (push) => {
         try {
-            processpush(push)
+            processpush(push, args.tol)
         } catch (e) {
-            debug('fb.on: failed to process push')
+            debug('fb.on: failed to process push (2)')
+            //debug(e)
         }
         
     })
