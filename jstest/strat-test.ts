@@ -127,10 +127,6 @@ describe('keeper', () => {
         await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
-        await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
-
         debug('set strat router+path')
         await send(strat.setSwapRouter, dapp.swapRouter.address)
         let {fore, rear} = create_path([weth.address, dapp.dai.address, rico.address], [500, 500])
@@ -139,6 +135,10 @@ describe('keeper', () => {
         await send(strat.setPath, rico.address, risk.address, fore, rear);
         ({fore, rear} = create_path([risk.address, rico.address], [3000]))
         await send(strat.setPath, risk.address, rico.address, fore, rear);
+
+        await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
 
         let args = {
           signer: ali,
@@ -155,8 +155,6 @@ describe('keeper', () => {
         }
 
         await run_keeper(args)
-
-
 
         debug('mint some weth and rico, pull some dai from bot')
 
@@ -227,7 +225,7 @@ describe('keeper', () => {
 
         await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
-        await delay(DELAY * 2)
+        await delay(DELAY)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
