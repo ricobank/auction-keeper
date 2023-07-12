@@ -27,7 +27,9 @@ task('deploy-strat', '')
     
     const strat_artifact = require('../artifacts/src/strat.sol/Strat.json')
     const strat_type = hre.ethers.ContractFactory.fromSolidity(strat_artifact, ali)
-    const strat = await strat_type.deploy(deps.objects.bank.address)
+    const strat = await strat_type.deploy(
+        deps.objects.bank.address, deps.objects.ploker.address, deps.objects.swapRouter.address
+    )
 
     const pb = new dpack.PackBuilder(hre.network.name)
     await pb.packObject({

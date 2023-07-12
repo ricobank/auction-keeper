@@ -4,10 +4,10 @@
 
 pragma solidity ^0.8.19;
 import {Vow} from '../lib/ricobank/src/vow.sol';
-import {Vat} from '../lib/ricobank/src/vow.sol';
-import {File} from '../lib/ricobank/src/file.sol';
 import {Vat} from '../lib/ricobank/src/vat.sol';
-import {Vow} from '../lib/ricobank/src/vow.sol';
+import {Vox} from '../lib/ricobank/src/vox.sol';
+import {File} from '../lib/ricobank/src/file.sol';
+import {Ploker} from '../lib/ricobank/src/test/Ploker.sol';
 
 import { ISwapRouter } from './TEMPinterface.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
@@ -58,30 +58,34 @@ contract Strat is UniSwapper {
     Gem public rico;
     Gem public risk;
     Feedbase public fb;
+    Ploker ploker;
     error ErrSwap();
     error ErrBail();
     error ErrFlap();
     error ErrFlop();
 
-    constructor(address payable _bank) {
+    constructor(address payable _bank, Ploker _ploker, ISwapRouter _router) {
         bank = _bank;
         rico = File(bank).rico();
         risk = Vow(bank).RISK();
         rico.approve(bank, type(uint).max);
         risk.approve(bank, type(uint).max);
         fb = File(bank).fb();
-    }
-
-    function grant() external {
+        ploker = _ploker;
+        router = _router;
         rico.approve(address(router), type(uint).max);
         risk.approve(address(router), type(uint).max);
     }
 
-    function fill_flip(bytes32 i, address u) external {
+    function fill_flip(bytes32 i, address u, address fsrc, bytes32 ftag) external {
+        if (Vox(bank).way() > RAY) { Vox(bank).poke(); }
+        if (ftag != bytes32(uint(0))) {
+            (,uint ttl) = fb.pull(fsrc, ftag);
+            if (ttl < block.timestamp) ploker.ploke(ftag);
+        }
         Vat(bank).flash(address(this), abi.encodeWithSelector(
             Strat.flip.selector, i, u, msg.sender
         ));
-
     }
 
     function fill_flop() external returns (uint ricogain, uint riskgain) {
@@ -91,9 +95,9 @@ contract Strat is UniSwapper {
         (ricogain, riskgain) = abi.decode(data, (uint, uint));
     }
 
-    function fill_flap() external returns (uint ricogain, uint riskgain) {
+    function fill_flap(bytes32[] calldata ilks) external returns (uint ricogain, uint riskgain) {
         bytes memory data = Vat(bank).flash(address(this), abi.encodeWithSelector(
-            Strat.flap.selector, msg.sender
+            Strat.flap.selector, msg.sender, ilks
         ));
         (ricogain, riskgain) = abi.decode(data, (uint, uint));
     }
@@ -119,7 +123,7 @@ contract Strat is UniSwapper {
         Gem(gem).transfer(usr, Gem(gem).balanceOf(address(this)));
     }
 
-    function flap(address usr) external returns (uint ricogain, uint riskgain) {
+    function flap(address usr, bytes32[] calldata ilks) external returns (uint ricogain, uint riskgain) {
         uint ricobefore = rico.balanceOf(address(this));
         uint flaprico = rico.balanceOf(address(bank)) - Vat(bank).sin() / RAY;
         uint rush;  uint price;
@@ -137,7 +141,6 @@ contract Strat is UniSwapper {
             flaprico * price / rush, rico.balanceOf(address(this))
         );
 
-        bytes32[] memory ilks = new bytes32[](0);
         ricobefore = rico.balanceOf(address(this));
         Vow(bank).keep(ilks);
 

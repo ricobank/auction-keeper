@@ -50,6 +50,7 @@ type IlkInfo = {
     chop: BigNumber;
 }
 
+
 type Feed = {val: BigNumber, ttl: BigNumber, dip: boolean }
 type Feeds = {[src: Address]: {[tag: string]: Feed}}
 let feeds : Feeds = {};
@@ -149,6 +150,12 @@ const processpalm = (_palm) => {
     }
 }
 
+const fastpow = (n :BigNumber, dt :BigNumber) => {
+    if (dt.eq(0)) return RAY
+    if (dt.mod(2).eq(1)) return fastpow(n, dt.div(2)).mul(n).div(RAY)
+    else return fastpow(n, dt.div(2))
+}
+
 const processpush = (_push, tol) => {
     const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
     const src = push.src.toLowerCase()
@@ -157,14 +164,23 @@ const processpush = (_push, tol) => {
         feeds[src] = {}
     }
     if (!feeds[src][tag]) {
-        feeds[src][tag] = {val: ethers.constants.Zero, ttl: ethers.constants.MaxUint256, dip: false}
+        feeds[src][tag] = {
+            val: ethers.constants.Zero,
+            ttl: ethers.constants.MaxUint256,
+            dip: false,
+        }
     }
     let nextval = BigNumber.from(push.val)
     let nextttl = BigNumber.from(push.ttl)
     let feed = feeds[src][tag]
-    if (tol > 0 && feed.val.gt(0)) {
-        // TODO this should accumulate a bit over time...
-        feed.dip = feed.val.sub(nextval).mul(RAY).div(feed.val).gt(tol)
+    if (tol.gt(0) && feed.val.gt(0)) {
+        let dipamt = feed.val.sub(nextval).mul(RAY).div(feed.val)
+        if (!way.lt(RAY)) {
+            let now = BigNumber.from(Math.ceil(Date.now() / 1000))
+            let parjump = fastpow(way, now.sub(tau))
+            dipamt = dipamt.mul(parjump).div(RAY)
+        }
+        feed.dip = dipamt.gt(tol)
     }
     feed.val = nextval
     feed.ttl = nextttl
@@ -174,9 +190,19 @@ const gettime = async () => {
     return (await ali.provider.getBlock('latest')).timestamp
 }
 
+const DISCOUNT = ray(0.999999)
 const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
     // TODO expand
-    return sell.gt(0)
+    let info : IlkInfo = ilkinfos[i]
+    let feed : Feed = feeds[info.fsrc][info.ftag]
+    let ask = earn.mul(RAY).div(sell)
+    let mark = feed.val
+    debug(`    profitable ? ask=${ask} market=${mark} discount=${DISCOUNT}`)
+    if (ask.mul(RAY).div(mark).lt(DISCOUNT)) {
+        debug(`        ...yes`)
+        return true
+    }
+    return false
 }
 
 // check if an ilk's price feed has changed beyond some tolerance
@@ -187,18 +213,6 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
     if (Object.keys(info.urns).length == 0) return []
     let fsrc = info.fsrc
     let ftag = info.ftag
-
-    /*
-    if (curtime.sub(tau).gt(poketime)) {
-        // TODO maybe roll this into strat?
-        try {
-            await send(ploker.ploke, b32(tag))
-        } catch (e) {
-            debug(e)
-        }
-        await send(bank.poke, {gasLimit: 100000000})
-    }
-   */
 
     if (!feeds[info.fsrc] || !feeds[info.fsrc][info.ftag]) {
         throw Error(`no feed for ${i}`)
@@ -236,13 +250,13 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
                         proms.push(new Promise(async (resolve, reject) => {
                             let res
                             try {
-                                res = await strat.fill_flip(b32(i), u)
-                                await res.wait()
+                                await send(strat.fill_flip, b32(i), u, info.fsrc, b32(info.ftag))
                                 debug(`fill_flip success on urn (${i},${u})`)
                             } catch (e) {
                                 debug(`failed to flip urn (${i}, ${u})`)
+                                //debug(e)
                             }
-                            resolve(res)
+                            resolve(null)
                         }))
                         debug('    pushed fill_flip')
                     }
@@ -357,7 +371,7 @@ const run_keeper = async (args) => {
             processpush(push, args.tol)
         } catch (e) {
             debug('fb.on: failed to process push (2)')
-            //debug(e)
+            debug(e)
         }
         
     })

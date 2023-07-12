@@ -128,7 +128,6 @@ describe('keeper', () => {
         await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
         await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
         debug('set strat router+path')
-        await send(strat.setSwapRouter, dapp.swapRouter.address)
         let {fore, rear} = create_path([weth.address, dapp.dai.address, rico.address], [500, 500])
         await send(strat.setPath, weth.address, rico.address, fore, rear);
         ({fore, rear} = create_path([rico.address, risk.address], [3000]))
@@ -205,7 +204,6 @@ describe('keeper', () => {
 
         await send(bank.file, b32('par'), b32(wad(7)))
          */
-        await send(strat.grant)
 
         await snapshot(hh);
     })
@@ -225,7 +223,8 @@ describe('keeper', () => {
 
         await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
-        await delay(DELAY)
+        // TODO maybe use events?
+        await delay(DELAY * 3 / 2)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
