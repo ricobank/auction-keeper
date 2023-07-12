@@ -407,9 +407,9 @@ const run_keeper = async (args) => {
 
     const scheduleflap = async () => {
         try {
-            let [ricogain, riskgain] = await strat.callStatic.fill_flap()
+            let [ricogain, riskgain] = await strat.callStatic.fill_flap([])
             if (ricogain > args.expected_rico || riskgain > args.expected_risk) {
-                await send(strat.fill_flap)
+                await send(strat.fill_flap, [])
             }
         } catch (e) {
             //debug('doflap failed:')
