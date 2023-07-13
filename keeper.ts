@@ -3,6 +3,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine, RAY } from 'minihat
 import { b32, snapshot, revert } from 'minihat'
 const dpack = require('@etherpacks/dpack')
 import * as ethers from 'ethers'
+const debug = require('debug')('keeper')
 
 let pack, dapp
 let bank, strat
@@ -268,7 +269,76 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
     return proms
 }
 
-const debug = require('debug')('keeper')
+
+const create_path = (tokens, fees) => {
+    if (!tokens.length == fees.length + 1) throw Error('create_path tokens fees length mismatch')
+
+    let fore = '0x'
+    let rear = '0x'
+    for (let i = 0; i < tokens.length - 1; i++) {
+      fore = ethers.utils.solidityPack(
+          ['bytes', 'address', 'uint24'], [fore, tokens[i], fees[i]]
+      );
+    }
+    fore = ethers.utils.solidityPack(
+      ['bytes', 'address'], [fore, tokens[tokens.length - 1]]
+    );
+
+    rear = ethers.utils.solidityPack(
+      ['bytes', 'address'], [rear, tokens[tokens.length - 1]]
+    );
+    for (let j = tokens.length - 1; j > 0; j--) {
+      rear = ethers.utils.solidityPack(
+          ['bytes', 'uint24', 'address'], [rear, fees[j - 1], tokens[j - 1]]
+      );
+    }
+
+    return {fore, rear}
+}
+
+const join_pool = async (args) => {
+    let nfpm = args.nfpm
+    let ethers = args.ethers
+    let ali = args.ali
+    debug('join_pool')
+    if (ethers.BigNumber.from(args.a1.token).gt(ethers.BigNumber.from(args.a2.token))) {
+      let a = args.a1;
+      args.a1 = args.a2;
+      args.a2 = a;
+    }
+
+    let spacing = args.tickSpacing;
+    let tickmax = 887220
+    // full range liquidity
+    let tickLower = -tickmax;
+    let tickUpper = tickmax;
+    let token1 = await ethers.getContractAt('Gem', args.a1.token)
+    let token2 = await ethers.getContractAt('Gem', args.a2.token)
+    debug('approve tokens ', args.a1.token, args.a2.token)
+    await send(token1.approve, nfpm.address, ethers.constants.MaxUint256);
+    await send(token2.approve, nfpm.address, ethers.constants.MaxUint256);
+    let timestamp = await gettime()
+    debug('nfpm mint')
+    let [tokenId, liquidity, amount0, amount1] = await nfpm.callStatic.mint([
+          args.a1.token, args.a2.token,
+          args.fee,
+          tickLower, tickUpper,
+          args.a1.amountIn, args.a2.amountIn,
+          0, 0, ali.address, timestamp + 1000
+    ]);
+
+    await send(nfpm.mint, [
+          args.a1.token, args.a2.token,
+          args.fee,
+          tickLower, tickUpper,
+          args.a1.amountIn, args.a2.amountIn,
+          0, 0, ali.address, timestamp + 1000
+    ]);
+
+    return {tokenId, liquidity, amount0, amount1}
+}
+
+
 
 const run_keeper = async (args) => {
 
@@ -423,4 +493,4 @@ const run_keeper = async (args) => {
     if (args.floptime) scheduleflap()
 }
 
-export { run_keeper }
+export { run_keeper, create_path, join_pool }

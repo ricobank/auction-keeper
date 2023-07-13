@@ -9,7 +9,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine } from 'minihat'
 const { hexZeroPad } = ethers.utils
 
 import { b32, snapshot, revert } from 'minihat'
-import { run_keeper } from '../keeper'
+import { run_keeper, create_path, join_pool } from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -24,74 +24,9 @@ let fb, bank, strat, keeper, ploker, weth, rico, mdn, dapp, divider
 let nfpm, factory, router, risk
 let ALI, BOB, CAT
 
-const create_path = (tokens, fees) => {
-    want(tokens.length).eql(fees.length + 1)
-
-    let fore = '0x'
-    let rear = '0x'
-    for (let i = 0; i < tokens.length - 1; i++) {
-      fore = ethers.utils.solidityPack(
-          ['bytes', 'address', 'uint24'], [fore, tokens[i], fees[i]]
-      );
-    }
-    fore = ethers.utils.solidityPack(
-      ['bytes', 'address'], [fore, tokens[tokens.length - 1]]
-    );
-
-    rear = ethers.utils.solidityPack(
-      ['bytes', 'address'], [rear, tokens[tokens.length - 1]]
-    );
-    for (let j = tokens.length - 1; j > 0; j--) {
-      rear = ethers.utils.solidityPack(
-          ['bytes', 'uint24', 'address'], [rear, fees[j - 1], tokens[j - 1]]
-      );
-    }
-
-    return {fore, rear}
-}
-
 const gettime = async () => {
     const blocknum = await ethers.provider.getBlockNumber()
     return (await ethers.provider.getBlock(blocknum)).timestamp
-}
-
-const join_pool = async (args) => {
-    debug('join_pool')
-    if (ethers.BigNumber.from(args.a1.token).gt(ethers.BigNumber.from(args.a2.token))) {
-      let a = args.a1;
-      args.a1 = args.a2;
-      args.a2 = a;
-    }
-
-    let spacing = args.tickSpacing;
-    let tickmax = 887220
-    // full range liquidity
-    let tickLower = -tickmax;
-    let tickUpper = tickmax;
-    let token1 = await ethers.getContractAt('Gem', args.a1.token)
-    let token2 = await ethers.getContractAt('Gem', args.a2.token)
-    debug('approve tokens ', args.a1.token, args.a2.token)
-    await send(token1.approve, nfpm.address, ethers.constants.MaxUint256);
-    await send(token2.approve, nfpm.address, ethers.constants.MaxUint256);
-    let timestamp = await gettime()
-    debug('nfpm mint')
-    let [tokenId, liquidity, amount0, amount1] = await nfpm.callStatic.mint([
-          args.a1.token, args.a2.token,
-          args.fee,
-          tickLower, tickUpper,
-          args.a1.amountIn, args.a2.amountIn,
-          0, 0, ALI, timestamp + 1000
-    ]);
-
-    await send(nfpm.mint, [
-          args.a1.token, args.a2.token,
-          args.fee,
-          tickLower, tickUpper,
-          args.a1.amountIn, args.a2.amountIn,
-          0, 0, ALI, timestamp + 1000
-    ]);
-
-    return {tokenId, liquidity, amount0, amount1}
 }
 
 describe('keeper', () => {
@@ -170,7 +105,7 @@ describe('keeper', () => {
         });
 
 
-        debug('join pool')
+        debug('calling join pool')
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
         await send(weth.deposit, {value: amt.mul(4)})
         await send(weth.transfer, BOB, amt.mul(4))
@@ -179,7 +114,9 @@ describe('keeper', () => {
         await send(weth.connect(bob).approve, bank.address, ethers.constants.MaxUint256, {gasLimit: 10000000})
         await send(bank.connect(bob).frob, b32('weth'), BOB, dink, amt.mul(2), {gasLimit: 100000000})
         await send(rico.connect(bob).transfer, ALI, await rico.balanceOf(BOB), {gasLimit: 100000000})
+        console.log("NFPM ", nfpm.address)
         await join_pool({
+            nfpm: nfpm, ethers: ethers, ali: ali,
             a1: { token: rico.address, amountIn: amt },
             a2: { token: dapp.dai.address, amountIn: amt },
             fee: 500,
@@ -188,6 +125,7 @@ describe('keeper', () => {
         dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(risk.mint, ALI, amt)
         await join_pool({
+            nfpm: nfpm, ethers: ethers, ali: ali,
             a1: { token: rico.address, amountIn: amt },
             a2: { token: risk.address, amountIn: amt },
             fee: 3000,

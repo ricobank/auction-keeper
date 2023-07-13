@@ -22,13 +22,13 @@ task('deploy-strat', '')
             'deploy-ricobank', { tokens: args.tokens, mock: "true", netname: args.netname }
         )
     } else {
-        throw new Error("deploy can't load rico from pack yet")
+        deps = require(args.ricopack)
     }
     
     const strat_artifact = require('../artifacts/src/strat.sol/Strat.json')
     const strat_type = hre.ethers.ContractFactory.fromSolidity(strat_artifact, ali)
     const strat = await strat_type.deploy(
-        deps.objects.bank.address, deps.objects.ploker.address, deps.objects.swapRouter.address
+        deps.objects.bank.address, deps.objects.ploker.address, deps.objects.universalRouter.address
     )
 
     const pb = new dpack.PackBuilder(hre.network.name)

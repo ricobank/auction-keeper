@@ -9,11 +9,19 @@ import {Vox} from '../lib/ricobank/src/vox.sol';
 import {File} from '../lib/ricobank/src/file.sol';
 import {Ploker} from '../lib/ricobank/src/test/Ploker.sol';
 
-import { ISwapRouter } from './TEMPinterface.sol';
+//import { ISwapRouter } from './TEMPinterface.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
 import {Math} from '../lib/ricobank/src/mixin/math.sol';
 import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
 import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
+
+interface IUniversalRouter {
+    function execute(bytes calldata commands, bytes[] calldata inputs, uint deadline) external;
+}
+
+interface Permit2 {
+    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
+}
 
 abstract contract UniSwapper is Ward, Math {
     struct Path {
@@ -23,8 +31,9 @@ abstract contract UniSwapper is Ward, Math {
     enum SwapKind {EXACT_IN, EXACT_OUT}
     // tokIn -> kind -> Path
     mapping(address tokIn => mapping(address tokOut => Path)) public paths;
+    address constant public PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
-    ISwapRouter public router;
+    IUniversalRouter public router;
 
     function setPath(address tokIn, address tokOut, bytes calldata fore, bytes calldata rear)
       _ward_ external {
@@ -35,20 +44,23 @@ abstract contract UniSwapper is Ward, Math {
 
     function setSwapRouter(address r)
       _ward_ external {
-        router = ISwapRouter(r);
+        router = IUniversalRouter(r);
     }
 
-    function _swap(address tokIn, address tokOut, address receiver, uint amt, uint limit)
-      internal returns (uint256 result) {
-        ISwapRouter.ExactOutputParams memory params =
-            ISwapRouter.ExactOutputParams({
-                path: paths[tokIn][tokOut].rear,
-                recipient: receiver,
-                deadline: block.timestamp,
-                amountOut: amt,
-                amountInMaximum: limit
-            });
-        return router.exactOutput(params);
+    function swap(address tokIn, address tokOut, address receiver, uint amt, uint limit)
+      public {
+        // upper bits 0, lower bits V3_SWAP_EXACT_OUT
+        bytes memory commands = abi.encodePacked(bytes1(0x01)); 
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(
+            receiver,
+            amt,
+            limit,
+            paths[tokIn][tokOut].rear,
+            true
+        );
+
+        router.execute(commands, inputs, block.timestamp);
     }
 }
 
@@ -64,7 +76,7 @@ contract Strat is UniSwapper {
     error ErrFlap();
     error ErrFlop();
 
-    constructor(address payable _bank, Ploker _ploker, ISwapRouter _router) {
+    constructor(address payable _bank, Ploker _ploker, address _router) {
         bank = _bank;
         rico = File(bank).rico();
         risk = Vow(bank).RISK();
@@ -72,7 +84,7 @@ contract Strat is UniSwapper {
         risk.approve(bank, type(uint).max);
         fb = File(bank).fb();
         ploker = _ploker;
-        router = _router;
+        router = IUniversalRouter(_router);
         rico.approve(address(router), type(uint).max);
         risk.approve(address(router), type(uint).max);
     }
@@ -111,9 +123,10 @@ contract Strat is UniSwapper {
 
         // swap to replenish what was paid for the flip
         uint ricospent = ricobefore - rico.balanceOf(address(this));
-        Gem(gem).approve(address(router), type(uint).max);
+        Gem(gem).approve(address(PERMIT2), type(uint).max);
+        Permit2(PERMIT2).approve(gem, address(router), type(uint160).max, uint48(block.timestamp));
         ricobefore = rico.balanceOf(address(this));
-        _swap(gem, address(rico), address(this), ricospent, ink);
+        swap(gem, address(rico), address(this), ricospent, ink);
 
         // give back the extra funds to caller
         uint ricobal = rico.balanceOf(address(this));
@@ -136,7 +149,7 @@ contract Strat is UniSwapper {
             price = uint(val);
         }
 
-        _swap(
+        swap(
             address(rico), address(risk), address(this),
             flaprico * price / rush, rico.balanceOf(address(this))
         );
@@ -146,7 +159,7 @@ contract Strat is UniSwapper {
 
         uint MINT = Vat(bank).MINT();
         if (rico.balanceOf(address(this)) < MINT) {
-            _swap(
+            swap(
                 address(risk), address(rico), address(this),
                 MINT - rico.balanceOf(address(this)), risk.balanceOf(address(this))
             );
@@ -170,7 +183,7 @@ contract Strat is UniSwapper {
         }
         uint ricospent = ricobefore - rico.balanceOf(address(this));
 
-        _swap(
+        swap(
             address(risk), address(rico), address(this),
             ricospent, risk.balanceOf(address(this))
         );
