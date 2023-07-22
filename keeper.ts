@@ -8,6 +8,7 @@ const debug = require('debug')('keeper')
 let pack, dapp
 let bank, strat
 let mdn, fb, ploker
+let uniwrap
 let ali
 let ilkinfos : IlkInfos = {}
 type BigNumber = ethers.BigNumber
@@ -20,6 +21,7 @@ const PALM = [
 ].map(ethers.utils.id)
 const [PALM0, PALM1, PALM2, PALMBYTES2] = PALM
 const FLOG = ethers.utils.id('NewFlog(address,bytes4,bytes)')
+const FLIP_FAILED = ethers.utils.id('FlipFailed(bytes)')
 
 
 
@@ -33,27 +35,127 @@ let tag : string
 type Ilk = string
 type Address = `0x${string}`
 
+
 type Urn = {
-    ink : BigNumber;
+    ink : BigNumber | BigNumber[];
     art : BigNumber;
 }
-type Urns = {[key: Address]: Urn}
+type Urns = {[u: Address]: Urn}
 
-type IlkInfo = {
-    fsrc: Address;
-    ftag: string;
-    urns: Urns;
-
-    // to quickly calculate expected profit
-    rack: BigNumber;
-    liqr: BigNumber;
-    fee: BigNumber;
-    chop: BigNumber;
+type ERC20Info = {
+    gem: Address,
+    name: string,
+    fsrc: Address,
+    ftag: string
 }
 
+interface Hook {
+    getFeeds() :FeedPtr[];
+    getIlkFeeds(i :Ilk) :FeedPtr[];
+    getUrnFeeds(i :Ilk, u :Address) :FeedPtr[];
+    cut(i :Ilk, u :Address) :Promise<BigNumber>;
+    dipIlk(i :Ilk) :boolean
+    dipUrn(i :Ilk, u :Address) :boolean
+}
+
+type Item = {
+    gem: Address
+    fsrc: Address
+    ftag: string
+}
+
+class ERC20Hook implements Hook {
+    public items: {[key: Ilk]: Item} = {}
+    public ink :{[i: Ilk]: {[u: Address]: BigNumber}} = {}
+
+    getFeeds() {
+        return [].concat(...Object.keys(this.items).map(i => this.getIlkFeeds(i)))
+    }
+
+    getIlkFeeds(i :Ilk) :FeedPtr[] {
+        return [{src: this.items[i].fsrc, tag: this.items[i].ftag}]
+    }
+
+    getUrnFeeds(i :Ilk, u :Address) :FeedPtr[] {
+        return this.getIlkFeeds(i)
+    }
+
+    async cut(i :Ilk, u :Address) :Promise<BigNumber> {
+        let item = this.items[i]
+        let feed = feeds[item.fsrc][item.ftag]
+        if (!this.ink[i]) this.ink[i] = {}
+        if (!this.ink[i][u]) this.ink[i][u] = ethers.constants.Zero
+        return this.ink[i][u].mul(feed.val)
+    }
+    dipIlk(i :Ilk) :boolean {
+        let item = this.items[i]
+        let feed = feeds[item.fsrc][item.ftag]
+        return feed.dip
+    }
+    dipUrn(i :Ilk, u :Address) :boolean {
+        throw Error('unimplemented dipUrn')
+    }
+}
+
+type UniV3NFTs = {[key: string]: {token0: ERC20Info, token1: ERC20Info}}
+
+class UniV3NFTHook implements Hook {
+    public sources: {[i: Ilk]: {[u: Address]: FeedPtr}} = {}
+    // tokenId => (token0, token1)
+    public nfts :UniV3NFTs = {}
+    public ink :{[i: Ilk]: {[u: Address]: [BigNumber]}} = {}
+    public wrap : ethers.Contract
+
+    getFeeds(): FeedPtr[] {
+        return [].concat(Object.keys(this.sources).map(i => this.getIlkFeeds(i)))
+    }
+
+    getIlkFeeds(i :Ilk) :FeedPtr[] {
+        return Object.values(this.sources[i])
+    }
+
+    getUrnFeeds(i :Ilk, u :Address) :FeedPtr[] {
+        return [].concat(this.ink[i][u].map(tokenId => {
+            let token0 = this.nfts[tokenId.toString()].token0
+            let token1 = this.nfts[tokenId.toString()].token1
+            return [
+                {src: token0.fsrc, tag: token0.ftag},
+                {src: token1.fsrc, tag: token1.ftag}
+            ]
+        }))
+    }
+    async cut(i :Ilk, u :Address) :Promise<BigNumber> {
+        let source = this.sources[i][u]
+        let res = ethers.constants.Zero
+        for (let tokenId in this.ink[i][u]) {
+            let {token0, token1} = this.nfts[tokenId]
+            let feed0 = feeds[token0.fsrc][token0.ftag]
+            let feed1 = feeds[token1.fsrc][token1.ftag]
+        }
+        throw Error('ERC20 cut : unimplemented')
+    }
+
+    dipIlk(i :Ilk) :boolean {
+        throw Error('unimplemented dipIlk')
+    }
+    dipUrn(i :Ilk, u :Address) :boolean {
+        throw Error('unimplemented dipUrn')
+    }
+}
+
+let hooks : {[hookname: string]: Hook} = {}
+type IlkInfo = {
+    hook: string,
+    urns: Urns,
+    rack: BigNumber,
+    liqr: BigNumber,
+    fee: BigNumber,
+    chop: BigNumber
+}
 
 type Feed = {val: BigNumber, ttl: BigNumber, dip: boolean }
 type Feeds = {[src: Address]: {[tag: string]: Feed}}
+type FeedPtr = {src: Address, tag: string}
 let feeds : Feeds = {};
 
 type IlkInfos = {[key: Ilk]: IlkInfo}
@@ -115,6 +217,26 @@ const processpalm = (_palm) => {
             info.fee = BigNumber.from(val)
         } else if (key == 'chop') {
             info.chop = BigNumber.from(val)
+        } else if (key.startsWith('erc20hook.0')) {
+            let erc20hook :ERC20Hook = hooks['erc20hook.0'] as ERC20Hook
+            if (!erc20hook.items[idx0]) {
+                erc20hook.items[idx0] = {
+                    gem: ethers.constants.AddressZero,
+                    fsrc: ethers.constants.AddressZero,
+                    ftag: ethers.constants.HashZero
+                }
+            }
+            let item = erc20hook.items[idx0]
+            let subkey = key.replace('erc20hook.0.', '')
+            if (subkey == 'gem') {
+                item.gem = val.slice(0, 42)
+            } else if (subkey == 'fsrc') {
+                item.fsrc = val.slice(0, 42)
+            } else if (subkey == 'ftag') {
+                item.ftag = xtos(val)
+            } else {
+                debug(`palm1: ${key} not handled`)
+            }
         } else {
             debug(`palm1: ${key} not handled`)
         }
@@ -140,9 +262,14 @@ const processpalm = (_palm) => {
         const idx1 = palm.idx1
         const i = xtos(idx0)
         const u = idx1.slice(0, 42)
-        if (key == 'ink') {
-            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
-            ilkinfos[i].urns[u].ink = BigNumber.from(val)
+        if (key.startsWith('erc20hook.0.')) {
+            const subkey = key.replace('erc20hook.0.', '')
+            if (subkey == 'ink') {
+                if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
+                ilkinfos[i].urns[u].ink = BigNumber.from(val)
+            } else {
+                debug(`palmbytes2: ${key} not handled`)
+            }
         } else {
             debug(`palmbytes2: ${key} not handled`)
         }
@@ -193,6 +320,8 @@ const gettime = async () => {
 
 const DISCOUNT = ray(0.999999)
 const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
+    return sell.gt(0)
+    /*
     // TODO expand
     let info : IlkInfo = ilkinfos[i]
     let feed : Feed = feeds[info.fsrc][info.ftag]
@@ -204,25 +333,19 @@ const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
         return true
     }
     return false
+   */
 }
 
 // check if an ilk's price feed has changed beyond some tolerance
 // if it has, loop through the tracked urns under said ilk,
 // deleting the empty ones, and bailing the sufficiently unsafe ones
-const scanilk = async (i :string, tol, minrush, poketime) => {
+const scanilk = async (i :string, tol, minrush) => {
     let info :IlkInfo = ilkinfos[i]
+    let hook :Hook = hooks[info.hook]
     if (Object.keys(info.urns).length == 0) return []
-    let fsrc = info.fsrc
-    let ftag = info.ftag
-
-    if (!feeds[info.fsrc] || !feeds[info.fsrc][info.ftag]) {
-        throw Error(`no feed for ${i}`)
-    }
-    let feed : Feed = feeds[info.fsrc][info.ftag]
     let proms = []
-    if (feed.dip) {
-        // feed has changed...check all the currently tracked urns
-        feed.dip = false
+    if (hook.dipIlk(i)) {
+        // TODO figure out when to unset dip
         for (let u in info.urns) {
             let urn = info.urns[u]
             //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
@@ -231,7 +354,7 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
             debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
             debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
             let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
-            let cut = urn.ink.mul(feed.val)
+            let cut = await hook.cut(i, u as Address)
             debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
             if (tab.gt(cut)) {
                 // unsafe
@@ -243,7 +366,7 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
                     let earn = cut.div(rush.eq(0) ? 1 : rush)
                     let sell = urn.ink
                     if (earn.gt(bill)) {
-                        sell = bill.mul(sell).div(earn == 0 ? 1 : earn);
+                        sell = bill.mul(sell).div(earn.eq(0) ? 1 : earn);
                         earn = bill
                     }
 
@@ -251,11 +374,23 @@ const scanilk = async (i :string, tol, minrush, poketime) => {
                         proms.push(new Promise(async (resolve, reject) => {
                             let res
                             try {
-                                await send(strat.fill_flip, b32(i), u, info.fsrc, b32(info.ftag))
+                                let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u as Address)
+                                let srcs = urnfeeds.map(f => f.src)
+                                let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
+                                // seems like gas estimator doesn't do well with raw calls that
+                                // don't bubble up errors...
+                                let tx = await send(
+                                    strat.fill_flip, b32(i), u, [], [], {gasLimit: 1000000000}
+                                )
+                                for (let event of tx.events) {
+                                    if (event.topics[0] == FLIP_FAILED) {
+                                        throw Error(event.data)
+                                    }
+                                }
                                 debug(`fill_flip success on urn (${i},${u})`)
                             } catch (e) {
                                 debug(`failed to flip urn (${i}, ${u})`)
-                                //debug(e)
+                                debug(e)
                             }
                             resolve(null)
                         }))
@@ -358,6 +493,13 @@ const run_keeper = async (args) => {
     fb = dapp.feedbase
     ploker = dapp.ploker
 
+    let erc20hook = new ERC20Hook()
+    let nfthook   = new UniV3NFTHook()
+    hooks['erc20hook.0'] = erc20hook
+    hooks['univ3nfthook.0'] = nfthook
+    nfthook.wrap = dapp.uniswapV3Wrapper
+
+
     await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
     await send(dapp.risk.approve, bank.address, ethers.constants.MaxUint256)
 
@@ -368,9 +510,8 @@ const run_keeper = async (args) => {
         const ftag = xtos(await bank.callStatic.gethi(b32(i), b32('ftag'), b32(i)))
         ilkinfos[i] = {
             // src and tag of feed to pull from
-            fsrc,
-            ftag,
             urns: {},
+            hook: i.startsWith(':uninft') ? 'univ3nfthook.0' : 'erc20hook.0',
             rack: bankilk.rack,
             liqr: bankilk.liqr,
             fee: bankilk.fee,
@@ -419,8 +560,12 @@ const run_keeper = async (args) => {
         }
     })
 
-    let ftags = ilks.map(i => ethers.utils.hexlify(b32(ilkinfos[i].ftag)))
-    let fsrcs = ilks.map(i => ethers.utils.hexZeroPad(ilkinfos[i].fsrc, 32))
+    let feedptrs = hooks['erc20hook.0'].getFeeds().concat(
+        hooks['univ3nfthook.0'].getFeeds()
+    )
+
+    let fsrcs = feedptrs.map(f => ethers.utils.hexZeroPad(f.src, 32))
+    let ftags = feedptrs.map(f => ethers.utils.hexlify(b32(f.tag)))
     const fbfilter = {
         address: fb.address,
         topics: [null,fsrcs,ftags]
@@ -452,12 +597,12 @@ const run_keeper = async (args) => {
         try {
             let proms = []
             for (let i in ilkinfos) {
-                proms = proms.concat(await scanilk(i, args.tol, args.minrush, args.poketime))
+                proms = proms.concat(await scanilk(i, args.tol, args.minrush))
             }
             await Promise.all(proms)
         } catch (e) {
             debug('scanilk failed:')
-            //debug(e)
+            debug(e)
         }
         setTimeout(scheduleflip, args.fliptime)
     }
