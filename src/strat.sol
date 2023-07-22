@@ -7,7 +7,7 @@ import {Vow} from '../lib/ricobank/src/vow.sol';
 import {Vat} from '../lib/ricobank/src/vat.sol';
 import {Vox} from '../lib/ricobank/src/vox.sol';
 import {File} from '../lib/ricobank/src/file.sol';
-import {Ploker} from '../lib/ricobank/src/test/Ploker.sol';
+import {Ploker} from '../lib/ricobank/lib/feedbase/src/Ploker.sol';
 
 //import { ISwapRouter } from './TEMPinterface.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
@@ -75,6 +75,10 @@ contract Strat is UniSwapper {
     error ErrBail();
     error ErrFlap();
     error ErrFlop();
+    error ErrSrcsTagsLength();
+    event FlipFailed(bytes data);
+    event Flip(bytes32 i, address u);
+
 
     constructor(address payable _bank, Ploker _ploker, address _router) {
         bank = _bank;
@@ -89,15 +93,19 @@ contract Strat is UniSwapper {
         risk.approve(address(router), type(uint).max);
     }
 
-    function fill_flip(bytes32 i, address u, address fsrc, bytes32 ftag) external {
+    function fill_flip(bytes32 i, address u, address[] calldata srcs, bytes32[] calldata tags) external {
+        if (srcs.length != tags.length) revert ErrSrcsTagsLength();
         if (Vox(bank).way() > RAY) { Vox(bank).poke(); }
-        if (ftag != bytes32(uint(0))) {
-            (,uint ttl) = fb.pull(fsrc, ftag);
-            if (ttl < block.timestamp) ploker.ploke(ftag);
+        for (uint j = 0; j < srcs.length; j++) {
+            (,uint ttl) = fb.pull(srcs[j], tags[j]);
+            if (ttl < block.timestamp) ploker.ploke(tags[j]);
         }
-        Vat(bank).flash(address(this), abi.encodeWithSelector(
-            Strat.flip.selector, i, u, msg.sender
-        ));
+        bytes memory flipdata = abi.encodeWithSelector(Strat.flip.selector, i, u, msg.sender);
+        try Vat(bank).flash(address(this), flipdata) returns (bytes memory res) {
+            emit Flip(i, u);
+        } catch (bytes memory errdata) {
+            emit FlipFailed(errdata);
+        }
     }
 
     function fill_flop() external returns (uint ricogain, uint riskgain) {
