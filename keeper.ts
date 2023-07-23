@@ -591,8 +591,6 @@ const run_keeper = async (args) => {
         
     })
 
-
-
     const scheduleflip = async () => {
         try {
             let proms = []
@@ -614,8 +612,8 @@ const run_keeper = async (args) => {
                 await send(strat.fill_flop)
             }
         } catch (e) {
-            //debug('doflop failed:')
-            //debug(e)
+            debug('doflop failed:')
+            debug(e)
         }
         setTimeout(scheduleflop, args.floptime)
     }
@@ -634,8 +632,10 @@ const run_keeper = async (args) => {
     }
 
     if (args.fliptime) scheduleflip()
-    if (args.flaptime) scheduleflop()
-    if (args.floptime) scheduleflap()
+    if (args.flaptime) scheduleflap()
+    if (args.floptime) {
+        scheduleflop()
+    }
 }
 
 export { run_keeper, create_path, join_pool }

@@ -157,6 +157,8 @@ contract Strat is UniSwapper {
             price = uint(val);
         }
 
+        rico.approve(address(PERMIT2), type(uint).max);
+        Permit2(PERMIT2).approve(address(rico), address(router), type(uint160).max, uint48(block.timestamp));
         swap(
             address(rico), address(risk), address(this),
             flaprico * price / rush, rico.balanceOf(address(this))
@@ -167,6 +169,8 @@ contract Strat is UniSwapper {
 
         uint MINT = Vat(bank).MINT();
         if (rico.balanceOf(address(this)) < MINT) {
+            risk.approve(address(PERMIT2), type(uint).max);
+            Permit2(PERMIT2).approve(address(risk), address(router), type(uint160).max, uint48(block.timestamp));
             swap(
                 address(risk), address(rico), address(this),
                 MINT - rico.balanceOf(address(this)), risk.balanceOf(address(this))
@@ -191,6 +195,8 @@ contract Strat is UniSwapper {
         }
         uint ricospent = ricobefore - rico.balanceOf(address(this));
 
+        risk.approve(address(PERMIT2), type(uint).max);
+        Permit2(PERMIT2).approve(address(risk), address(router), type(uint160).max, uint48(block.timestamp));
         swap(
             address(risk), address(rico), address(this),
             ricospent, risk.balanceOf(address(this))
