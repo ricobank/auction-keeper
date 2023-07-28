@@ -9,7 +9,7 @@
   "scripts": {
     "initialize": "git submodule update --init --recursive && cd lib/ricobank && npm run initialize && cd - && npm i && npm run build:feedbase",
     "build:feedbase": "cd lib/feedbase && npm run initialize && cd -",
-    "test": "forge test --fork-block-number 16445606 -vv -f $RPC_URL",
+    "test": "forge test --fork-block-number 17501364 -vv -f $RPC_URL",
     "js-test": "npm run build && ts-mocha --timeout 100000 jstest/*",
     "build": "npx hardhat compile",
     "download-submodules": "git submodule update --init --recursive"
@@ -33,6 +33,7 @@
   "devDependencies": {
     "@etherpacks/dpack": "^0.0.31",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@openzeppelin/contracts": "^4.9.2",
     "@types/mocha": "^10.0.1",
     "@uniswap/universal-router": "^1.4.3",
     "hardhat": "^2.14.1",

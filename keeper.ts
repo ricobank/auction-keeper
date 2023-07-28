@@ -13,6 +13,7 @@ let ali
 let ilkinfos : IlkInfos = {}
 type BigNumber = ethers.BigNumber
 const BigNumber = ethers.BigNumber
+const constants = ethers.constants
 const PALM = [
     'NewPalm0(bytes32,bytes32)',
     'NewPalm1(bytes32,bytes32,bytes32)',
@@ -37,25 +38,33 @@ type Address = `0x${string}`
 
 
 type Urn = {
-    ink : BigNumber | BigNumber[];
     art : BigNumber;
 }
 type Urns = {[u: Address]: Urn}
 
 type ERC20Info = {
     gem: Address,
-    name: string,
-    fsrc: Address,
-    ftag: string
+    amt: BigNumber
 }
 
 interface Hook {
     getFeeds() :FeedPtr[];
     getIlkFeeds(i :Ilk) :FeedPtr[];
     getUrnFeeds(i :Ilk, u :Address) :FeedPtr[];
-    cut(i :Ilk, u :Address) :Promise<BigNumber>;
+    cut(i :Ilk, u :Address) :BigNumber;
     dipIlk(i :Ilk) :boolean
     dipUrn(i :Ilk, u :Address) :boolean
+    ink :{[i: Ilk]: {[u: Address]: any}}
+    updateUrn(i :Ilk, u :Address);
+    updateIlk(i :Ilk);
+    profitable(
+      i :string,
+      u :Address,
+      cut :BigNumber,
+      bill :BigNumber,
+      rush :BigNumber
+    ) :boolean;
+    getGems(i :Ilk, u :Address) :Address[];
 }
 
 type Item = {
@@ -67,8 +76,13 @@ type Item = {
 class ERC20Hook implements Hook {
     public items: {[key: Ilk]: Item} = {}
     public ink :{[i: Ilk]: {[u: Address]: BigNumber}} = {}
+    public minprofit :BigNumber
 
-    getFeeds() {
+    constructor(minprofit :BigNumber) {
+        this.minprofit = minprofit
+    }
+
+    getFeeds() :FeedPtr[] {
         return [].concat(...Object.keys(this.items).map(i => this.getIlkFeeds(i)))
     }
 
@@ -80,7 +94,7 @@ class ERC20Hook implements Hook {
         return this.getIlkFeeds(i)
     }
 
-    async cut(i :Ilk, u :Address) :Promise<BigNumber> {
+    cut(i :Ilk, u :Address) :BigNumber {
         let item = this.items[i]
         let feed = feeds[item.fsrc][item.ftag]
         if (!this.ink[i]) this.ink[i] = {}
@@ -95,51 +109,141 @@ class ERC20Hook implements Hook {
     dipUrn(i :Ilk, u :Address) :boolean {
         throw Error('unimplemented dipUrn')
     }
+    async updateUrn(i :Ilk, u :Address) {
+        throw Error('unimplemented updateUrn')
+    }
+    async updateIlk(i :Ilk) {
+        throw Error('unimplemented updateIlk')
+    }
+
+    profitable(
+      i :string,
+      u :Address,
+      cut :BigNumber,
+      bill :BigNumber,
+      rush :BigNumber
+    ) :boolean {
+        let earn = cut.div(rush.eq(0) ? 1 : rush)
+        let sell = this.ink[i][u]
+        if (earn.gt(bill)) {
+            sell = bill.mul(sell).div(earn.eq(0) ? 1 : earn);
+            earn = bill
+        }
+        // TODO expand
+        let item = this.items[i]
+        let feed : Feed = feeds[item.fsrc][item.ftag]
+        let ask = earn.mul(RAY).div(sell)
+        let mark = feed.val
+        debug(`    profitable ? ask=${ask} market=${mark} discount=${DISCOUNT}`)
+        if (ask.mul(RAY).div(mark).lt(DISCOUNT)) {
+            debug(`        ...yes`)
+            return true
+        }
+        return false
+    }
+
+
+    getGems(i :Ilk, u :Address) :Address[] {
+        return [this.items[i].gem]
+    }
 }
 
 type UniV3NFTs = {[key: string]: {token0: ERC20Info, token1: ERC20Info}}
 
 class UniV3NFTHook implements Hook {
-    public sources: {[i: Ilk]: {[u: Address]: FeedPtr}} = {}
+    public sources: {[i: Ilk]: {[gem: Address]: FeedPtr}} = {}
     // tokenId => (token0, token1)
     public nfts :UniV3NFTs = {}
-    public ink :{[i: Ilk]: {[u: Address]: [BigNumber]}} = {}
+    public ink :{[i: Ilk]: {[u: Address]: BigNumber[]}} = {}
     public wrap : ethers.Contract
+    public minprofit
+    public nfpm : ethers.Contract
+    public hookContract : ethers.Contract
+    public bank : ethers.Contract
+
+    constructor(
+      bank :ethers.Contract,
+      minprofit :BigNumber
+    ) {
+        this.bank = bank
+        this.minprofit = minprofit
+    }
 
     getFeeds(): FeedPtr[] {
-        return [].concat(Object.keys(this.sources).map(i => this.getIlkFeeds(i)))
+        return [].concat(...Object.keys(this.sources).map(i => this.getIlkFeeds(i)))
     }
 
     getIlkFeeds(i :Ilk) :FeedPtr[] {
+        if (!this.sources[i]) this.sources[i] = {}
         return Object.values(this.sources[i])
     }
 
     getUrnFeeds(i :Ilk, u :Address) :FeedPtr[] {
-        return [].concat(this.ink[i][u].map(tokenId => {
+        return this.ink[i][u].map(tokenId => {
             let token0 = this.nfts[tokenId.toString()].token0
             let token1 = this.nfts[tokenId.toString()].token1
+            let source0 = this.sources[i][token0.gem]
+            let source1 = this.sources[i][token1.gem]
             return [
-                {src: token0.fsrc, tag: token0.ftag},
-                {src: token1.fsrc, tag: token1.ftag}
+                {src: source0.src, tag: source0.tag},
+                {src: source1.src, tag: source1.tag}
             ]
-        }))
+        }).flat()
     }
-    async cut(i :Ilk, u :Address) :Promise<BigNumber> {
-        let source = this.sources[i][u]
+
+    cut(i :Ilk, u :Address) :BigNumber {
         let res = ethers.constants.Zero
-        for (let tokenId in this.ink[i][u]) {
-            let {token0, token1} = this.nfts[tokenId]
-            let feed0 = feeds[token0.fsrc][token0.ftag]
-            let feed1 = feeds[token1.fsrc][token1.ftag]
+        for (let tokenId of this.ink[i][u]) {
+            let {token0, token1} = this.nfts[tokenId.toString()]
+            let source0 = this.sources[i][token0.gem]
+            let source1 = this.sources[i][token1.gem]
+            let feed0 = feeds[source0.src][source0.tag]
+            let feed1 = feeds[source1.src][source1.tag]
+            res = res.add(feed0.val.mul(token0.amt))
+            res = res.add(feed1.val.mul(token1.amt))
         }
-        throw Error('ERC20 cut : unimplemented')
+        return res
     }
 
     dipIlk(i :Ilk) :boolean {
-        throw Error('unimplemented dipIlk')
+        let ilkfeeds = this.getIlkFeeds(i)
+        for (let fptr of ilkfeeds) {
+            let feed = feeds[fptr.src][fptr.tag]
+            if (feed && feed.dip) {
+                return true
+            }
+        }
+        return false
     }
     dipUrn(i :Ilk, u :Address) :boolean {
         throw Error('unimplemented dipUrn')
+    }
+    async updateUrn(i :Ilk, u :Address) {
+        throw Error('unimplemented updateUrn')
+    }
+    async updateIlk(i :Ilk) {
+        throw Error('unimplemented updateIlk')
+    }
+    profitable(
+      i :string,
+      u :Address,
+      cut :BigNumber,
+      bill :BigNumber,
+      rush :BigNumber
+    ) :boolean {
+        let info :IlkInfo = ilkinfos[i]
+        let marketRush = rush.mul(RAY).div(info.chop)
+        let profit = cut.sub(cut.mul(RAY).div(marketRush)).div(RAY)
+        debug(`marketrush=${marketRush} profit=${profit} minprofit=${this.minprofit}`)
+        return profit.gt(this.minprofit)
+    }
+
+    getGems(i :Ilk, u :Address) :Address[] {
+        let ink = this.ink[i][u]
+        return this.ink[i][u].map(tokenId => {
+            let {token0, token1} = this.nfts[tokenId.toString()]
+            return [token0.gem, token1.gem]
+        }).flat()
     }
 }
 
@@ -181,7 +285,7 @@ const sigs = {
 const topic = (name) => ethers.utils.id(sigs[name]).slice(0,10) + '00'.repeat(28)
 
 
-const processpalm = (_palm) => {
+const processpalm = async (_palm) => {
     const id = _palm.topics[0]
     if (id == PALM0) {
         const palm = bank.interface.decodeEventLog('NewPalm0', _palm.data, _palm.topics)
@@ -217,7 +321,7 @@ const processpalm = (_palm) => {
             info.fee = BigNumber.from(val)
         } else if (key == 'chop') {
             info.chop = BigNumber.from(val)
-        } else if (key.startsWith('erc20hook.0')) {
+        } else if (key.startsWith('erc20hook.0.')) {
             let erc20hook :ERC20Hook = hooks['erc20hook.0'] as ERC20Hook
             if (!erc20hook.items[idx0]) {
                 erc20hook.items[idx0] = {
@@ -249,8 +353,27 @@ const processpalm = (_palm) => {
         const i = xtos(idx0)
         const u = idx1.slice(0, 42)
         if (key == 'art') {
-            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
+            if (!ilkinfos[i].urns) ilkinfos[i].urns = {}
+            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero}
             ilkinfos[i].urns[u].art = BigNumber.from(val)
+        } else if (key.startsWith('uninfthook.0.')) {
+            let uninfthook :UniV3NFTHook = hooks['uninfthook.0'] as UniV3NFTHook
+            let gem = u
+            if (!uninfthook.sources[i]) uninfthook.sources[i] = {}
+            if (!uninfthook.sources[i][gem]) {
+                uninfthook.sources[i][gem] = {
+                    src: constants.AddressZero, tag: constants.HashZero
+                }
+            }
+            let source = uninfthook.sources[i][gem]
+            let subkey = key.replace('uninfthook.0.', '')
+            if (subkey == 'fsrc') {
+                source.src = val.slice(0, 42)
+            } else if (subkey == 'ftag') {
+                source.tag = xtos(val)
+            } else {
+                debug(`palm2: ${key} not handled`)
+            }
         } else {
             debug(`palm2: ${key} not handled`)
         }
@@ -262,11 +385,42 @@ const processpalm = (_palm) => {
         const idx1 = palm.idx1
         const i = xtos(idx0)
         const u = idx1.slice(0, 42)
+        const info :IlkInfo = ilkinfos[i]
         if (key.startsWith('erc20hook.0.')) {
             const subkey = key.replace('erc20hook.0.', '')
             if (subkey == 'ink') {
-                if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
-                ilkinfos[i].urns[u].ink = BigNumber.from(val)
+                const hook :ERC20Hook = hooks[info.hook] as ERC20Hook
+                if (!hook.ink) hook.ink = {}
+                if (!hook.ink[i]) hook.ink[i] = {}
+                hook.ink[i][u] = BigNumber.from(val)
+            } else {
+                debug(`palmbytes2: ${key} not handled`)
+            }
+        } else if (key.startsWith('uninfthook.0.')) {
+            const subkey = key.replace('uninfthook.0.', '')
+            if (subkey == 'ink') {
+                const hook :UniV3NFTHook= hooks[info.hook] as UniV3NFTHook
+                if (!hook.ink) hook.ink = {}
+                if (!hook.ink[i]) hook.ink[i] = {}
+                const ntoks = (val.length - 2) / 64
+                const tokenIds = ethers.utils.defaultAbiCoder.decode(
+                    Array.from({length: ntoks}, () => 'uint'), val
+                ).map(BigNumber.from)
+                let proms = tokenIds.map(tokenId => new Promise(async (resolve, reject) => {
+                    try {
+                        let [t0, t1, a0, a1] = await bank.amounts(tokenId)
+                        hook.nfts[tokenId.toString()] = {
+                            token0: {gem: t0.toLowerCase(), amt: a0},
+                            token1: {gem: t1.toLowerCase(), amt: a1}
+                        }
+                        resolve(null)
+                    } catch (e) {
+                        debug("palm uni ink fail")
+                        debug(e)
+                    }
+                }))
+                await Promise.all(proms)
+                hook.ink[i][u] = tokenIds
             } else {
                 debug(`palmbytes2: ${key} not handled`)
             }
@@ -284,6 +438,7 @@ const fastpow = (n :BigNumber, dt :BigNumber) => {
     else return fastpow(n, dt.div(2))
 }
 
+let ndairicos = 0
 const processpush = (_push, tol) => {
     const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
     const src = push.src.toLowerCase()
@@ -298,9 +453,9 @@ const processpush = (_push, tol) => {
             dip: false,
         }
     }
+    let feed = feeds[src][tag]
     let nextval = BigNumber.from(push.val)
     let nextttl = BigNumber.from(push.ttl)
-    let feed = feeds[src][tag]
     if (tol.gt(0) && feed.val.gt(0)) {
         let dipamt = feed.val.sub(nextval).mul(RAY).div(feed.val)
         if (!way.lt(RAY)) {
@@ -339,63 +494,60 @@ const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
 // check if an ilk's price feed has changed beyond some tolerance
 // if it has, loop through the tracked urns under said ilk,
 // deleting the empty ones, and bailing the sufficiently unsafe ones
-const scanilk = async (i :string, tol, minrush) => {
+const scanilk = async (i :string) => {
     let info :IlkInfo = ilkinfos[i]
     let hook :Hook = hooks[info.hook]
     if (Object.keys(info.urns).length == 0) return []
     let proms = []
     if (hook.dipIlk(i)) {
         // TODO figure out when to unset dip
-        for (let u in info.urns) {
+        for (let _u in info.urns) {
+            let u = _u as Address
             let urn = info.urns[u]
             //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
             let rush
             // div by ray once for each rmul in vat safe
-            debug(`checking urn (${i},${u}): ink=${urn.ink}, art=${urn.art}`)
+            debug(`checking urn (${i},${u}): ink=${hook.ink[i][u]}, art=${urn.art}`)
             debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
             let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
-            let cut = await hook.cut(i, u as Address)
+            let cut = hook.cut(i, u)
             debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
             if (tab.gt(cut)) {
                 // unsafe
-                rush = tab.div(cut.eq(0) ? 1 : cut).mul(ray(1))
-                debug(`    rush=${rush}, minrush=${minrush}`)
-                if (rush.gt(minrush)) {
-                    // check expected profit
-                    let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
-                    let earn = cut.div(rush.eq(0) ? 1 : rush)
-                    let sell = urn.ink
-                    if (earn.gt(bill)) {
-                        sell = bill.mul(sell).div(earn.eq(0) ? 1 : earn);
-                        earn = bill
-                    }
-
-                    if (profitable(i, sell, earn)) {
-                        proms.push(new Promise(async (resolve, reject) => {
-                            let res
-                            try {
-                                let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u as Address)
-                                let srcs = urnfeeds.map(f => f.src)
-                                let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
-                                // seems like gas estimator doesn't do well with raw calls that
-                                // don't bubble up errors...
-                                let tx = await send(
-                                    strat.fill_flip, b32(i), u, [], [], {gasLimit: 1000000000}
-                                )
-                                for (let event of tx.events) {
-                                    if (event.topics[0] == FLIP_FAILED) {
-                                        throw Error(event.data)
-                                    }
+                rush = constants.MaxUint256
+                if (!cut.eq(0)) {
+                    rush = tab.div(cut.div(RAY))
+                }
+                debug(`    rush=${rush}`)
+                // check expected profit
+                let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
+                if (hook.profitable(i, u, cut, bill, rush)) {
+                    let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u)
+                    let gems :Address[] = hook.getGems(i, u)
+                    console.log("FLIPPING WITH GEMS", gems)
+                    let srcs = urnfeeds.map(f => f.src)
+                    let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
+                    proms.push(new Promise(async (resolve, reject) => {
+                        let res
+                        try {
+                            // seems like gas estimator doesn't do well with raw calls that
+                            // don't bubble up errors...
+                            let tx = await send(
+                                strat.fill_flip, b32(i), u, [], [], gems, {gasLimit: 1000000000}
+                            )
+                            for (let event of tx.events) {
+                                if (event.topics[0] == FLIP_FAILED) {
+                                    throw Error(event.data)
                                 }
-                                debug(`fill_flip success on urn (${i},${u})`)
-                            } catch (e) {
-                                debug(`failed to flip urn (${i}, ${u})`)
-                                debug(e)
                             }
-                            resolve(null)
-                        }))
-                        debug('    pushed fill_flip')
-                    }
+                            debug(`fill_flip success on urn (${i},${u})`)
+                        } catch (e) {
+                            debug(`failed to flip urn (${i}, ${u})`)
+                            debug(e)
+                        }
+                        resolve(null)
+                    }))
+                    debug('    pushed fill_flip')
                 }
             }
         }
@@ -493,11 +645,10 @@ const run_keeper = async (args) => {
     fb = dapp.feedbase
     ploker = dapp.ploker
 
-    let erc20hook = new ERC20Hook()
-    let nfthook   = new UniV3NFTHook()
+    let erc20hook = new ERC20Hook(BigNumber.from(args.minprofit))
+    let nfthook   = new UniV3NFTHook(bank.address, BigNumber.from(args.minprofit))
     hooks['erc20hook.0'] = erc20hook
-    hooks['univ3nfthook.0'] = nfthook
-    nfthook.wrap = dapp.uniswapV3Wrapper
+    hooks['uninfthook.0'] = nfthook
 
 
     await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
@@ -505,13 +656,11 @@ const run_keeper = async (args) => {
 
     let ilks = args.ilks.split(';')
     for (let i of ilks) {
-        const bankilk = bank.ilks(b32(i))
-        const fsrc = (await bank.callStatic.gethi(b32(i), b32('fsrc'), b32(i))).slice(0, 42)
-        const ftag = xtos(await bank.callStatic.gethi(b32(i), b32('ftag'), b32(i)))
+        const bankilk = await bank.ilks(b32(i))
         ilkinfos[i] = {
             // src and tag of feed to pull from
             urns: {},
-            hook: i.startsWith(':uninft') ? 'univ3nfthook.0' : 'erc20hook.0',
+            hook: i.startsWith(':uninft') ? 'uninfthook.0' : 'erc20hook.0',
             rack: bankilk.rack,
             liqr: bankilk.liqr,
             fee: bankilk.fee,
@@ -556,19 +705,19 @@ const run_keeper = async (args) => {
             }
         } catch (e) {
             debug('bank.on: failed to process event')
-            //debug(e)
+            debug(e)
         }
     })
 
     let feedptrs = hooks['erc20hook.0'].getFeeds().concat(
-        hooks['univ3nfthook.0'].getFeeds()
+        hooks['uninfthook.0'].getFeeds()
     )
 
     let fsrcs = feedptrs.map(f => ethers.utils.hexZeroPad(f.src, 32))
     let ftags = feedptrs.map(f => ethers.utils.hexlify(b32(f.tag)))
     const fbfilter = {
         address: fb.address,
-        topics: [null,fsrcs,ftags]
+        topics: [null,null,null]
     }
     events = await fb.queryFilter(fbfilter)
     for (let event of events) {
@@ -593,10 +742,7 @@ const run_keeper = async (args) => {
 
     const scheduleflip = async () => {
         try {
-            let proms = []
-            for (let i in ilkinfos) {
-                proms = proms.concat(await scanilk(i, args.tol, args.minrush))
-            }
+            let proms = Object.keys(ilkinfos).map(scanilk)
             await Promise.all(proms)
         } catch (e) {
             debug('scanilk failed:')

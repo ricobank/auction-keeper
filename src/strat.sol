@@ -13,7 +13,9 @@ import {Ploker} from '../lib/ricobank/lib/feedbase/src/Ploker.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
 import {Math} from '../lib/ricobank/src/mixin/math.sol';
 import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
+import {UniNFTHook} from '../lib/ricobank/src/hook/nfpm/UniV3NFTHook.sol';
 import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
+import {INonfungiblePositionManager} from './TEMPinterface.sol';
 
 interface IUniversalRouter {
     function execute(bytes calldata commands, bytes[] calldata inputs, uint deadline) external;
@@ -32,6 +34,7 @@ abstract contract UniSwapper is Ward, Math {
     // tokIn -> kind -> Path
     mapping(address tokIn => mapping(address tokOut => Path)) public paths;
     address constant public PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    error ErrNoPath();
 
     IUniversalRouter public router;
 
@@ -52,15 +55,19 @@ abstract contract UniSwapper is Ward, Math {
         // upper bits 0, lower bits V3_SWAP_EXACT_OUT
         bytes memory commands = abi.encodePacked(bytes1(0x01)); 
         bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(
-            receiver,
-            amt,
-            limit,
-            paths[tokIn][tokOut].rear,
-            true
-        );
+        Path memory path = paths[tokIn][tokOut];
 
-        router.execute(commands, inputs, block.timestamp);
+        if (path.rear.length == 0) revert ErrNoPath();
+
+        inputs[0] = abi.encode(receiver, amt, limit, path.rear, true);
+
+        try router.execute(commands, inputs, block.timestamp) {}
+        catch {
+            commands = abi.encodePacked(bytes1(0x00));
+            inputs[0] = abi.encode(receiver, limit, 0, path.fore, true);
+            try router.execute(commands, inputs, block.timestamp) {}
+            catch {}
+        }
     }
 }
 
@@ -79,7 +86,8 @@ contract Strat is UniSwapper {
     event FlipFailed(bytes data);
     event Flip(bytes32 i, address u);
 
-
+    enum FlipType { FLIP_GEM, FLIP_UNI_NFT }
+    
     constructor(address payable _bank, Ploker _ploker, address _router) {
         bank = _bank;
         rico = File(bank).rico();
@@ -93,19 +101,23 @@ contract Strat is UniSwapper {
         risk.approve(address(router), type(uint).max);
     }
 
-    function fill_flip(bytes32 i, address u, address[] calldata srcs, bytes32[] calldata tags) external {
+    function fill_flip(
+      bytes32 i,
+      address u,
+      address[] calldata srcs,
+      bytes32[] calldata tags,
+      FlipType fliptype
+    ) external {
         if (srcs.length != tags.length) revert ErrSrcsTagsLength();
         if (Vox(bank).way() > RAY) { Vox(bank).poke(); }
         for (uint j = 0; j < srcs.length; j++) {
             (,uint ttl) = fb.pull(srcs[j], tags[j]);
             if (ttl < block.timestamp) ploker.ploke(tags[j]);
         }
-        bytes memory flipdata = abi.encodeWithSelector(Strat.flip.selector, i, u, msg.sender);
-        try Vat(bank).flash(address(this), flipdata) returns (bytes memory res) {
-            emit Flip(i, u);
-        } catch (bytes memory errdata) {
-            emit FlipFailed(errdata);
-        }
+        bytes memory flipdata = abi.encodeWithSelector(
+            Strat.flip.selector, i, u, msg.sender, fliptype
+        );
+        Vat(bank).flash(address(this), flipdata);
     }
 
     function fill_flop() external returns (uint ricogain, uint riskgain) {
@@ -122,26 +134,98 @@ contract Strat is UniSwapper {
         (ricogain, riskgain) = abi.decode(data, (uint, uint));
     }
 
-    function flip(bytes32 i, address u, address usr) external {
-        Vat(bank).drip(i);
-        address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
-        uint ricobefore = rico.balanceOf(address(this));
-        // UPDATE ONCE BAIL IS UPDATED TO DECODE
-        uint ink = uint(bytes32(abi.decode(Vat(bank).bail(i, u), (bytes))));
-
+    function _swap_gem(address gem, address usr, uint MINT, bytes memory ink) internal {
         // swap to replenish what was paid for the flip
-        uint ricospent = ricobefore - rico.balanceOf(address(this));
-        Gem(gem).approve(address(PERMIT2), type(uint).max);
-        Permit2(PERMIT2).approve(gem, address(router), type(uint160).max, uint48(block.timestamp));
-        ricobefore = rico.balanceOf(address(this));
-        swap(gem, address(rico), address(this), ricospent, ink);
+        uint ricobal = rico.balanceOf(address(this));
+        if (ricobal < MINT) {
+            Gem(gem).approve(address(PERMIT2), type(uint).max);
+            Permit2(PERMIT2).approve(
+                gem, address(router), type(uint160).max, uint48(block.timestamp)
+            );
+            uint need = MINT - ricobal;
+            swap(gem, address(rico), address(this), need, uint(bytes32(ink)));
+        }
 
         // give back the extra funds to caller
-        uint ricobal = rico.balanceOf(address(this));
-        uint MINT = Vat(bank).MINT();
+        ricobal = rico.balanceOf(address(this));
         if (ricobal < MINT) revert ErrBail();
+
         rico.transfer(usr, ricobal - MINT);
         Gem(gem).transfer(usr, Gem(gem).balanceOf(address(this)));
+    }
+
+
+    function _swap_uni(
+      INonfungiblePositionManager nfpm,
+      address usr,
+      uint MINT,
+      bytes memory ink
+    ) internal {
+        uint[] memory tokenIds = new uint[](ink.length / 32);
+        for (uint i = 0; i < ink.length; i += 32) {
+            uint tokenId;
+            for (uint j = 0; j < 32; j++) {
+               tokenId = tokenId + (uint(uint8(ink[i+j])) << ((31 - j) * 8));
+            }
+
+            tokenIds[i / 32] = tokenId;
+
+            uint ricobal = rico.balanceOf(address(this));
+            if (ricobal < MINT) {
+                (,,address t0,address t1,,,,uint128 liquidity,,,,) = nfpm.positions(tokenId);
+                nfpm.decreaseLiquidity(
+                    INonfungiblePositionManager.DecreaseLiquidityParams(
+                        tokenId, liquidity, 0, 0, block.timestamp
+                    )
+                );
+                nfpm.collect(INonfungiblePositionManager.CollectParams(
+                    tokenId, address(this), type(uint128).max, type(uint128).max
+                ));
+ 
+                Gem(t0).approve(address(PERMIT2), type(uint).max);
+                Permit2(PERMIT2).approve(
+                    t0, address(router), type(uint160).max, uint48(block.timestamp)
+                );
+                uint need = MINT - ricobal;
+                swap(t0, address(rico), address(this), need, Gem(t0).balanceOf(address(this)));
+                ricobal = rico.balanceOf(address(this));
+                if (ricobal < MINT) {
+                    Gem(t1).approve(address(PERMIT2), type(uint).max);
+                    Permit2(PERMIT2).approve(
+                        t1, address(router), type(uint160).max, uint48(block.timestamp)
+                    );
+                    need = MINT - ricobal;
+                    swap(t1, address(rico), address(this), need, uint(bytes32(ink)));
+                }
+                if (t0 != address(rico)) Gem(t0).transfer(usr, Gem(t0).balanceOf(address(this)));
+                if (t1 != address(rico)) Gem(t1).transfer(usr, Gem(t1).balanceOf(address(this)));
+            }
+
+            nfpm.transferFrom(address(this), usr, tokenId);
+        }
+    }
+
+
+    function flip(
+        bytes32 i,
+        address u,
+        address usr,
+        FlipType fliptype
+    ) external {
+        // UPDATE ONCE BAIL IS UPDATED TO DECODE
+        bytes memory ink = abi.decode(Vat(bank).bail(i, u), (bytes));
+        uint MINT = Vat(bank).MINT();
+        if (fliptype == FlipType.FLIP_GEM) {
+            address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
+            _swap_gem(gem, usr, MINT, ink);
+        } else if (fliptype == FlipType.FLIP_UNI_NFT) {
+            INonfungiblePositionManager nfpm = INonfungiblePositionManager(
+                address(bytes20(Vat(bank).geth(i, 'nfpm')))
+            );
+            _swap_uni(nfpm, usr, MINT, ink);
+        }
+        uint ricobal = rico.balanceOf(address(this));
+        if (ricobal > MINT) rico.transfer(usr, ricobal - MINT);
     }
 
     function flap(address usr, bytes32[] calldata ilks) external returns (uint ricogain, uint riskgain) {
@@ -212,5 +296,6 @@ contract Strat is UniSwapper {
         risk.transfer(usr, riskgain);
     }
 }
+
 
 
