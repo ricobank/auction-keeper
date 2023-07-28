@@ -34,7 +34,7 @@ abstract contract UniSwapper is Ward, Math {
     // tokIn -> kind -> Path
     mapping(address tokIn => mapping(address tokOut => Path)) public paths;
     address constant public PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    error ErrNoPath();
+    error ErrNoPath(address tokIn, address tokOut);
 
     IUniversalRouter public router;
 
@@ -57,7 +57,8 @@ abstract contract UniSwapper is Ward, Math {
         bytes[] memory inputs = new bytes[](1);
         Path memory path = paths[tokIn][tokOut];
 
-        if (path.rear.length == 0) revert ErrNoPath();
+
+        if (path.rear.length == 0) revert ErrNoPath(tokIn, tokOut);
 
         inputs[0] = abi.encode(receiver, amt, limit, path.rear, true);
 
@@ -182,23 +183,27 @@ contract Strat is UniSwapper {
                     tokenId, address(this), type(uint128).max, type(uint128).max
                 ));
  
-                Gem(t0).approve(address(PERMIT2), type(uint).max);
-                Permit2(PERMIT2).approve(
-                    t0, address(router), type(uint160).max, uint48(block.timestamp)
-                );
-                uint need = MINT - ricobal;
-                swap(t0, address(rico), address(this), need, Gem(t0).balanceOf(address(this)));
-                ricobal = rico.balanceOf(address(this));
-                if (ricobal < MINT) {
+                if (t0 != address(rico)) {
+                    Gem(t0).approve(address(PERMIT2), type(uint).max);
+                    Permit2(PERMIT2).approve(
+                        t0, address(router), type(uint160).max, uint48(block.timestamp)
+                    );
+                    uint need = MINT - ricobal;
+                    swap(t0, address(rico), address(this), need, Gem(t0).balanceOf(address(this)));
+                    ricobal = rico.balanceOf(address(this));
+                }
+
+                if (t1 != address(rico) && ricobal < MINT) {
                     Gem(t1).approve(address(PERMIT2), type(uint).max);
                     Permit2(PERMIT2).approve(
                         t1, address(router), type(uint160).max, uint48(block.timestamp)
                     );
-                    need = MINT - ricobal;
+                    uint need = MINT - ricobal;
                     swap(t1, address(rico), address(this), need, uint(bytes32(ink)));
                 }
-                if (t0 != address(rico)) Gem(t0).transfer(usr, Gem(t0).balanceOf(address(this)));
+
                 if (t1 != address(rico)) Gem(t1).transfer(usr, Gem(t1).balanceOf(address(this)));
+                if (t0 != address(rico)) Gem(t0).transfer(usr, Gem(t0).balanceOf(address(this)));
             }
 
             nfpm.transferFrom(address(this), usr, tokenId);

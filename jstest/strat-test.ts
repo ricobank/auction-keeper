@@ -177,7 +177,7 @@ describe('keeper', () => {
         await delay(DELAY)
         await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
         // TODO maybe use events?
-        await delay(DELAY * 3 / 2)
+        await delay(DELAY * 3)
 
         let art = await bank.urns(b32('weth'), ALI)
         want(art).eql(ethers.constants.Zero)
@@ -255,8 +255,8 @@ describe('keeper', () => {
 
         await delay(DELAY)
         want(await nfpm.ownerOf(ricodaitokid)).eql(bank.address)
-        await send(fb.push, b32('dai:rico'), bn2b32(ray(0)), ethers.constants.MaxUint256)
-        await delay(DELAY * 2)
+        await send(fb.push, b32('dai:rico'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
+        await delay(DELAY * 5)
         want(await nfpm.ownerOf(ricodaitokid)).eql(ALI)
     })
 

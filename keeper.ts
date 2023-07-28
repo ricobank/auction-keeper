@@ -532,8 +532,10 @@ const scanilk = async (i :string) => {
                         try {
                             // seems like gas estimator doesn't do well with raw calls that
                             // don't bubble up errors...
+                            let fliptype = 0
+                            if (i.startsWith(':uninft')) fliptype = 1
                             let tx = await send(
-                                strat.fill_flip, b32(i), u, [], [], gems, {gasLimit: 1000000000}
+                                strat.fill_flip, b32(i), u, [], [], fliptype, {gasLimit: 1000000000}
                             )
                             for (let event of tx.events) {
                                 if (event.topics[0] == FLIP_FAILED) {
