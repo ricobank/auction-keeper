@@ -104,7 +104,11 @@ class ERC20Hook implements Hook {
     dipIlk(i :Ilk) :boolean {
         let item = this.items[i]
         let feed = feeds[item.fsrc][item.ftag]
-        return feed.dip
+        if (feed.dip) {
+            feed.dip = false
+            return true
+        }
+        return false
     }
     dipUrn(i :Ilk, u :Address) :boolean {
         throw Error('unimplemented dipUrn')
@@ -210,6 +214,7 @@ class UniV3NFTHook implements Hook {
         for (let fptr of ilkfeeds) {
             let feed = feeds[fptr.src][fptr.tag]
             if (feed && feed.dip) {
+                feed.dip = false
                 return true
             }
         }
@@ -545,7 +550,7 @@ const scanilk = async (i :string) => {
                             debug(`fill_flip success on urn (${i},${u})`)
                         } catch (e) {
                             debug(`failed to flip urn (${i}, ${u})`)
-                            debug(e)
+                            //debug(e)
                         }
                         resolve(null)
                     }))
@@ -707,7 +712,7 @@ const run_keeper = async (args) => {
             }
         } catch (e) {
             debug('bank.on: failed to process event')
-            debug(e)
+            //debug(e)
         }
     })
 
@@ -737,7 +742,7 @@ const run_keeper = async (args) => {
             processpush(push, args.tol)
         } catch (e) {
             debug('fb.on: failed to process push (2)')
-            debug(e)
+            //debug(e)
         }
         
     })
@@ -748,7 +753,7 @@ const run_keeper = async (args) => {
             await Promise.all(proms)
         } catch (e) {
             debug('scanilk failed:')
-            debug(e)
+            //debug(e)
         }
         setTimeout(scheduleflip, args.fliptime)
     }
@@ -761,7 +766,7 @@ const run_keeper = async (args) => {
             }
         } catch (e) {
             debug('doflop failed:')
-            debug(e)
+            //debug(e)
         }
         setTimeout(scheduleflop, args.floptime)
     }
