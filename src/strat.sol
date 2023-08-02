@@ -16,6 +16,7 @@ import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
 import {UniNFTHook} from '../lib/ricobank/src/hook/nfpm/UniV3NFTHook.sol';
 import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
 import {INonfungiblePositionManager} from './TEMPinterface.sol';
+import 'hardhat/console.sol';
 
 interface IUniversalRouter {
     function execute(bytes calldata commands, bytes[] calldata inputs, uint deadline) external;
@@ -218,7 +219,7 @@ contract Strat is UniSwapper {
         FlipType fliptype
     ) external {
         // UPDATE ONCE BAIL IS UPDATED TO DECODE
-        bytes memory ink = abi.decode(Vat(bank).bail(i, u), (bytes));
+        bytes memory ink = Vat(bank).bail(i, u);
         uint MINT = Vat(bank).MINT();
         if (fliptype == FlipType.FLIP_GEM) {
             address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));

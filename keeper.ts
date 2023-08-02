@@ -5,6 +5,7 @@ const dpack = require('@etherpacks/dpack')
 import * as ethers from 'ethers'
 const debug = require('debug')('keeper')
 
+let quit
 let pack, dapp
 let bank, strat
 let mdn, fb, ploker
@@ -22,6 +23,10 @@ const PALM = [
 ].map(ethers.utils.id)
 const [PALM0, PALM1, PALM2, PALMBYTES2] = PALM
 const FLOG = ethers.utils.id('NewFlog(address,bytes4,bytes)')
+
+
+let fbfilter, bankfilter
+ 
 const FLIP_FAILED = ethers.utils.id('FlipFailed(bytes)')
 
 
@@ -52,8 +57,7 @@ interface Hook {
     getIlkFeeds(i :Ilk) :FeedPtr[];
     getUrnFeeds(i :Ilk, u :Address) :FeedPtr[];
     cut(i :Ilk, u :Address) :BigNumber;
-    dipIlk(i :Ilk) :boolean
-    dipUrn(i :Ilk, u :Address) :boolean
+    dipIlk(i :Ilk) :FeedPtr[]
     ink :{[i: Ilk]: {[u: Address]: any}}
     updateUrn(i :Ilk, u :Address);
     updateIlk(i :Ilk);
@@ -64,7 +68,7 @@ interface Hook {
       bill :BigNumber,
       rush :BigNumber
     ) :boolean;
-    getGems(i :Ilk, u :Address) :Address[];
+    //getGems(i :Ilk, u :Address) :Address[];
 }
 
 type Item = {
@@ -77,9 +81,11 @@ class ERC20Hook implements Hook {
     public items: {[key: Ilk]: Item} = {}
     public ink :{[i: Ilk]: {[u: Address]: BigNumber}} = {}
     public minprofit :BigNumber
+    public tol :BigNumber
 
-    constructor(minprofit :BigNumber) {
+    constructor(minprofit :BigNumber, tol :BigNumber) {
         this.minprofit = minprofit
+        this.tol = tol
     }
 
     getFeeds() :FeedPtr[] {
@@ -101,17 +107,17 @@ class ERC20Hook implements Hook {
         if (!this.ink[i][u]) this.ink[i][u] = ethers.constants.Zero
         return this.ink[i][u].mul(feed.val)
     }
-    dipIlk(i :Ilk) :boolean {
+    dipFeed(i :Ilk, feed :Feed) :boolean {
+        let dipamt = feed.prevval.sub(feed.val).mul(RAY).div(feed.prevval)
+        return dipamt.gt(this.tol)
+    }
+    dipIlk(i :Ilk) :FeedPtr[] {
         let item = this.items[i]
         let feed = feeds[item.fsrc][item.ftag]
-        if (feed.dip) {
-            feed.dip = false
-            return true
+        if (this.dipFeed(i, feed)) {
+            return [{src: item.fsrc, tag: item.ftag}]
         }
-        return false
-    }
-    dipUrn(i :Ilk, u :Address) :boolean {
-        throw Error('unimplemented dipUrn')
+        return []
     }
     async updateUrn(i :Ilk, u :Address) {
         throw Error('unimplemented updateUrn')
@@ -147,9 +153,11 @@ class ERC20Hook implements Hook {
     }
 
 
+    /*
     getGems(i :Ilk, u :Address) :Address[] {
         return [this.items[i].gem]
     }
+   */
 }
 
 type UniV3NFTs = {[key: string]: {token0: ERC20Info, token1: ERC20Info}}
@@ -164,13 +172,16 @@ class UniV3NFTHook implements Hook {
     public nfpm : ethers.Contract
     public hookContract : ethers.Contract
     public bank : ethers.Contract
+    public tol :BigNumber
 
     constructor(
       bank :ethers.Contract,
-      minprofit :BigNumber
+      minprofit :BigNumber,
+      tol :BigNumber
     ) {
         this.bank = bank
         this.minprofit = minprofit
+        this.tol = tol
     }
 
     getFeeds(): FeedPtr[] {
@@ -209,20 +220,25 @@ class UniV3NFTHook implements Hook {
         return res
     }
 
-    dipIlk(i :Ilk) :boolean {
+    dipIlk(i :Ilk) :FeedPtr[] {
         let ilkfeeds = this.getIlkFeeds(i)
+        let res = []
         for (let fptr of ilkfeeds) {
-            let feed = feeds[fptr.src][fptr.tag]
-            if (feed && feed.dip) {
-                feed.dip = false
-                return true
+            if (fptr.src != constants.AddressZero && fptr.tag != constants.HashZero) {
+                let feed = feeds[fptr.src][fptr.tag]
+                if (feed && this.dipFeed(i, feed)) {
+                    res.push(fptr)
+                }
             }
         }
-        return false
+        return res
     }
-    dipUrn(i :Ilk, u :Address) :boolean {
-        throw Error('unimplemented dipUrn')
+
+    dipFeed(i :Ilk, feed :Feed) :boolean {
+        let dipamt = feed.prevval.sub(feed.val).mul(RAY).div(feed.prevval)
+        return dipamt.gt(this.tol)
     }
+
     async updateUrn(i :Ilk, u :Address) {
         throw Error('unimplemented updateUrn')
     }
@@ -243,6 +259,7 @@ class UniV3NFTHook implements Hook {
         return profit.gt(this.minprofit)
     }
 
+    /*
     getGems(i :Ilk, u :Address) :Address[] {
         let ink = this.ink[i][u]
         return this.ink[i][u].map(tokenId => {
@@ -250,6 +267,7 @@ class UniV3NFTHook implements Hook {
             return [token0.gem, token1.gem]
         }).flat()
     }
+   */
 }
 
 let hooks : {[hookname: string]: Hook} = {}
@@ -262,7 +280,12 @@ type IlkInfo = {
     chop: BigNumber
 }
 
-type Feed = {val: BigNumber, ttl: BigNumber, dip: boolean }
+type Feed = {
+    val: BigNumber,
+    ttl: BigNumber,
+    prevval: BigNumber,
+    prevttl: BigNumber
+}
 type Feeds = {[src: Address]: {[tag: string]: Feed}}
 type FeedPtr = {src: Address, tag: string}
 let feeds : Feeds = {};
@@ -358,7 +381,6 @@ const processpalm = async (_palm) => {
         const i = xtos(idx0)
         const u = idx1.slice(0, 42)
         if (key == 'art') {
-            if (!ilkinfos[i].urns) ilkinfos[i].urns = {}
             if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero}
             ilkinfos[i].urns[u].art = BigNumber.from(val)
         } else if (key.startsWith('uninfthook.0.')) {
@@ -421,7 +443,7 @@ const processpalm = async (_palm) => {
                         resolve(null)
                     } catch (e) {
                         debug("palm uni ink fail")
-                        debug(e)
+                        //debug(e)
                     }
                 }))
                 await Promise.all(proms)
@@ -443,7 +465,6 @@ const fastpow = (n :BigNumber, dt :BigNumber) => {
     else return fastpow(n, dt.div(2))
 }
 
-let ndairicos = 0
 const processpush = (_push, tol) => {
     const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
     const src = push.src.toLowerCase()
@@ -455,20 +476,20 @@ const processpush = (_push, tol) => {
         feeds[src][tag] = {
             val: ethers.constants.Zero,
             ttl: ethers.constants.MaxUint256,
-            dip: false,
+            prevval: ethers.constants.Zero,
+            prevttl: ethers.constants.Zero,
         }
     }
     let feed = feeds[src][tag]
     let nextval = BigNumber.from(push.val)
     let nextttl = BigNumber.from(push.ttl)
-    if (tol.gt(0) && feed.val.gt(0)) {
-        let dipamt = feed.val.sub(nextval).mul(RAY).div(feed.val)
-        if (!way.lt(RAY)) {
-            let now = BigNumber.from(Math.ceil(Date.now() / 1000))
-            let parjump = fastpow(way, now.sub(tau))
-            dipamt = dipamt.mul(parjump).div(RAY)
-        }
-        feed.dip = dipamt.gt(tol)
+    debug(`push @ (${src},${tag}) old: (${feed.prevval}, ${feed.prevttl}) new: (${nextval} ${nextttl})`)
+    if (feed.prevttl.eq(ethers.constants.Zero)) {
+        feed.prevval = nextval
+        feed.prevttl = nextttl
+    } else {
+        feed.prevval = feed.val
+        feed.prevttl = feed.ttl
     }
     feed.val = nextval
     feed.ttl = nextttl
@@ -479,32 +500,17 @@ const gettime = async () => {
 }
 
 const DISCOUNT = ray(0.999999)
-const profitable = (i :string, sell :BigNumber, earn :BigNumber) => {
-    return sell.gt(0)
-    /*
-    // TODO expand
-    let info : IlkInfo = ilkinfos[i]
-    let feed : Feed = feeds[info.fsrc][info.ftag]
-    let ask = earn.mul(RAY).div(sell)
-    let mark = feed.val
-    debug(`    profitable ? ask=${ask} market=${mark} discount=${DISCOUNT}`)
-    if (ask.mul(RAY).div(mark).lt(DISCOUNT)) {
-        debug(`        ...yes`)
-        return true
-    }
-    return false
-   */
-}
 
 // check if an ilk's price feed has changed beyond some tolerance
 // if it has, loop through the tracked urns under said ilk,
 // deleting the empty ones, and bailing the sufficiently unsafe ones
-const scanilk = async (i :string) => {
+const scanilk = (i :string) => {
     let info :IlkInfo = ilkinfos[i]
     let hook :Hook = hooks[info.hook]
-    if (Object.keys(info.urns).length == 0) return []
+    if (Object.keys(info.urns).length == 0) return {dips: [], proms: []}
     let proms = []
-    if (hook.dipIlk(i)) {
+    let dips = hook.dipIlk(i)
+    if (dips.length > 0) {
         // TODO figure out when to unset dip
         for (let _u in info.urns) {
             let u = _u as Address
@@ -528,8 +534,6 @@ const scanilk = async (i :string) => {
                 let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
                 if (hook.profitable(i, u, cut, bill, rush)) {
                     let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u)
-                    let gems :Address[] = hook.getGems(i, u)
-                    console.log("FLIPPING WITH GEMS", gems)
                     let srcs = urnfeeds.map(f => f.src)
                     let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
                     proms.push(new Promise(async (resolve, reject) => {
@@ -560,7 +564,7 @@ const scanilk = async (i :string) => {
         }
     }
 
-    return proms
+    return {dips, proms}
 }
 
 
@@ -611,7 +615,8 @@ const join_pool = async (args) => {
     debug('approve tokens ', args.a1.token, args.a2.token)
     await send(token1.approve, nfpm.address, ethers.constants.MaxUint256);
     await send(token2.approve, nfpm.address, ethers.constants.MaxUint256);
-    let timestamp = await gettime()
+    let timestamp = (await ali.provider.getBlock('latest')).timestamp
+
     debug('nfpm mint')
     let [tokenId, liquidity, amount0, amount1] = await nfpm.callStatic.mint([
           args.a1.token, args.a2.token,
@@ -634,7 +639,9 @@ const join_pool = async (args) => {
 
 
 
+let listening = false
 const run_keeper = async (args) => {
+    quit = false
 
     debug('schedule')
     debug('network name:', args.netname)
@@ -652,8 +659,12 @@ const run_keeper = async (args) => {
     fb = dapp.feedbase
     ploker = dapp.ploker
 
-    let erc20hook = new ERC20Hook(BigNumber.from(args.minprofit))
-    let nfthook   = new UniV3NFTHook(bank.address, BigNumber.from(args.minprofit))
+    let erc20hook = new ERC20Hook(
+        BigNumber.from(args.minprofit), BigNumber.from(args.tol)
+    )
+    let nfthook   = new UniV3NFTHook(
+        bank.address, BigNumber.from(args.minprofit), BigNumber.from(args.tol)
+    )
     hooks['erc20hook.0'] = erc20hook
     hooks['uninfthook.0'] = nfthook
 
@@ -685,10 +696,11 @@ const run_keeper = async (args) => {
 
     ilks.forEach(i => ilkinfos[i].urns = {})
 
-    const bankfilter = {
+    bankfilter = {
         address: bank.address,
         topics: [PALM.concat([FLOG])]
     }
+
     let events = await bank.queryFilter(bankfilter)
     for (let event of events) {
         try {
@@ -703,29 +715,31 @@ const run_keeper = async (args) => {
         }
     }
 
-    bank.on(bankfilter, async (event) => { 
-        try {
-            if (event.topics[0] == FLOG) {
-                //processflog(event)
-            } else {
-                processpalm(event)
+    if (!listening) {
+        bank.on(bankfilter, async (event) => { 
+            try {
+                if (event.topics[0] == FLOG) {
+                    //processflog(event)
+                } else {
+                    processpalm(event)
+                }
+            } catch (e) {
+                debug('bank.on: failed to process event')
+                //debug(e)
             }
-        } catch (e) {
-            debug('bank.on: failed to process event')
-            //debug(e)
-        }
-    })
+        })
+    }
 
     let feedptrs = hooks['erc20hook.0'].getFeeds().concat(
         hooks['uninfthook.0'].getFeeds()
     )
 
-    let fsrcs = feedptrs.map(f => ethers.utils.hexZeroPad(f.src, 32))
-    let ftags = feedptrs.map(f => ethers.utils.hexlify(b32(f.tag)))
-    const fbfilter = {
+    fbfilter = {
         address: fb.address,
         topics: [null,null,null]
     }
+    let fsrcs = feedptrs.map(f => ethers.utils.hexZeroPad(f.src, 32))
+    let ftags = feedptrs.map(f => ethers.utils.hexlify(b32(f.tag)))
     events = await fb.queryFilter(fbfilter)
     for (let event of events) {
         try {
@@ -737,28 +751,39 @@ const run_keeper = async (args) => {
     }
 
 
-    fb.on(fbfilter, async (push) => {
-        try {
-            processpush(push, args.tol)
-        } catch (e) {
-            debug('fb.on: failed to process push (2)')
-            //debug(e)
-        }
-        
-    })
+    if (!listening) {
+        fb.on(fbfilter, async (push) => {
+            try {
+                processpush(push, args.tol)
+            } catch (e) {
+                debug('fb.on: failed to process push (2)')
+                //debug(e)
+            }
+        })
+        listening = true
+    }
 
     const scheduleflip = async () => {
+        if (quit) return
         try {
-            let proms = Object.keys(ilkinfos).map(scanilk)
+            let scans = Object.keys(ilkinfos).map(scanilk)
+            let dips = scans.map(s => s.dips).flat()
+            let proms = scans.map(s => s.proms).flat()
+            dips.forEach(dip => {
+                let feed :Feed = feeds[dip.src][dip.tag]
+                feed.prevval = feed.val
+                feed.prevttl = feed.ttl
+            })
             await Promise.all(proms)
         } catch (e) {
             debug('scanilk failed:')
-            //debug(e)
+            debug(e)
         }
         setTimeout(scheduleflip, args.fliptime)
     }
 
     const scheduleflop = async () => {
+        if (quit) return
         try {
             let [ricogain, riskgain] = await strat.callStatic.fill_flop()
             if (ricogain > args.expected_rico || riskgain > args.expected_risk) {
@@ -772,6 +797,7 @@ const run_keeper = async (args) => {
     }
 
     const scheduleflap = async () => {
+        if (quit) return
         try {
             let [ricogain, riskgain] = await strat.callStatic.fill_flap([])
             if (ricogain > args.expected_rico || riskgain > args.expected_risk) {
@@ -791,4 +817,17 @@ const run_keeper = async (args) => {
     }
 }
 
-export { run_keeper, create_path, join_pool }
+const stop_listeners = async () => {
+    bank.removeAllListeners()
+    fb.removeAllListeners()
+}
+
+const stop_keeper = async () => {
+    quit = true
+    if (ali) await gettime()
+    feeds = {}
+    hooks = {}
+    ilkinfos = {}
+}
+
+export { run_keeper, create_path, join_pool, stop_keeper, stop_listeners }
