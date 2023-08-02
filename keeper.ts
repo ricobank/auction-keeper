@@ -57,7 +57,7 @@ interface Hook {
     getIlkFeeds(i :Ilk) :FeedPtr[];
     getUrnFeeds(i :Ilk, u :Address) :FeedPtr[];
     cut(i :Ilk, u :Address) :BigNumber;
-    dipIlk(i :Ilk) :FeedPtr[]
+    //dipIlk(i :Ilk) :FeedPtr[]
     ink :{[i: Ilk]: {[u: Address]: any}}
     updateUrn(i :Ilk, u :Address);
     updateIlk(i :Ilk);
@@ -107,6 +107,7 @@ class ERC20Hook implements Hook {
         if (!this.ink[i][u]) this.ink[i][u] = ethers.constants.Zero
         return this.ink[i][u].mul(feed.val)
     }
+    /*
     dipFeed(i :Ilk, feed :Feed) :boolean {
         let dipamt = feed.prevval.sub(feed.val).mul(RAY).div(feed.prevval)
         return dipamt.gt(this.tol)
@@ -119,6 +120,7 @@ class ERC20Hook implements Hook {
         }
         return []
     }
+   */
     async updateUrn(i :Ilk, u :Address) {
         throw Error('unimplemented updateUrn')
     }
@@ -220,6 +222,7 @@ class UniV3NFTHook implements Hook {
         return res
     }
 
+    /*
     dipIlk(i :Ilk) :FeedPtr[] {
         let ilkfeeds = this.getIlkFeeds(i)
         let res = []
@@ -238,6 +241,7 @@ class UniV3NFTHook implements Hook {
         let dipamt = feed.prevval.sub(feed.val).mul(RAY).div(feed.prevval)
         return dipamt.gt(this.tol)
     }
+   */
 
     async updateUrn(i :Ilk, u :Address) {
         throw Error('unimplemented updateUrn')
@@ -509,62 +513,59 @@ const scanilk = (i :string) => {
     let hook :Hook = hooks[info.hook]
     if (Object.keys(info.urns).length == 0) return {dips: [], proms: []}
     let proms = []
-    let dips = hook.dipIlk(i)
-    if (dips.length > 0) {
-        // TODO figure out when to unset dip
-        for (let _u in info.urns) {
-            let u = _u as Address
-            let urn = info.urns[u]
-            //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
-            let rush
-            // div by ray once for each rmul in vat safe
-            debug(`checking urn (${i},${u}): ink=${hook.ink[i][u]}, art=${urn.art}`)
-            debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
-            let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
-            let cut = hook.cut(i, u)
-            debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
-            if (tab.gt(cut)) {
-                // unsafe
-                rush = constants.MaxUint256
-                if (!cut.eq(0)) {
-                    rush = tab.div(cut.div(RAY))
-                }
-                debug(`    rush=${rush}`)
-                // check expected profit
-                let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
-                if (hook.profitable(i, u, cut, bill, rush)) {
-                    let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u)
-                    let srcs = urnfeeds.map(f => f.src)
-                    let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
-                    proms.push(new Promise(async (resolve, reject) => {
-                        let res
-                        try {
-                            // seems like gas estimator doesn't do well with raw calls that
-                            // don't bubble up errors...
-                            let fliptype = 0
-                            if (i.startsWith(':uninft')) fliptype = 1
-                            let tx = await send(
-                                strat.fill_flip, b32(i), u, [], [], fliptype, {gasLimit: 1000000000}
-                            )
-                            for (let event of tx.events) {
-                                if (event.topics[0] == FLIP_FAILED) {
-                                    throw Error(event.data)
-                                }
+    // TODO figure out when to unset dip
+    for (let _u in info.urns) {
+        let u = _u as Address
+        let urn = info.urns[u]
+        //let [safe, rush, cut] = await bank.callStatic.safe(b32(i), u)
+        let rush
+        // div by ray once for each rmul in vat safe
+        debug(`checking urn (${i},${u}): ink=${hook.ink[i][u]}, art=${urn.art}`)
+        debug(`    par=${par}, rack=${info.rack}, liqr=${info.liqr}`)
+        let tab = urn.art.mul(par).mul(info.rack).mul(info.liqr).div(ray(1).pow(2))
+        let cut = hook.cut(i, u)
+        debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
+        if (tab.gt(cut)) {
+            // unsafe
+            rush = constants.MaxUint256
+            if (!cut.eq(0)) {
+                rush = tab.div(cut.div(RAY))
+            }
+            debug(`    rush=${rush}`)
+            // check expected profit
+            let bill = info.chop.mul(urn.art).mul(info.rack).div(ray(1).pow(2))
+            if (hook.profitable(i, u, cut, bill, rush)) {
+                let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u)
+                let srcs = urnfeeds.map(f => f.src)
+                let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
+                proms.push(new Promise(async (resolve, reject) => {
+                    let res
+                    try {
+                        // seems like gas estimator doesn't do well with raw calls that
+                        // don't bubble up errors...
+                        let fliptype = 0
+                        if (i.startsWith(':uninft')) fliptype = 1
+                        let tx = await send(
+                            strat.fill_flip, b32(i), u, [], [], fliptype, {gasLimit: 1000000000}
+                        )
+                        for (let event of tx.events) {
+                            if (event.topics[0] == FLIP_FAILED) {
+                                throw Error(event.data)
                             }
-                            debug(`fill_flip success on urn (${i},${u})`)
-                        } catch (e) {
-                            debug(`failed to flip urn (${i}, ${u})`)
-                            //debug(e)
                         }
-                        resolve(null)
-                    }))
-                    debug('    pushed fill_flip')
-                }
+                        debug(`fill_flip success on urn (${i},${u})`)
+                    } catch (e) {
+                        debug(`failed to flip urn (${i}, ${u})`)
+                        debug(e)
+                    }
+                    resolve(null)
+                }))
+                debug('    pushed fill_flip')
             }
         }
     }
 
-    return {dips, proms}
+    return {dips: [], proms}
 }
 
 
@@ -767,13 +768,15 @@ const run_keeper = async (args) => {
         if (quit) return
         try {
             let scans = Object.keys(ilkinfos).map(scanilk)
-            let dips = scans.map(s => s.dips).flat()
+            //let dips = scans.map(s => s.dips).flat()
             let proms = scans.map(s => s.proms).flat()
+            /*
             dips.forEach(dip => {
                 let feed :Feed = feeds[dip.src][dip.tag]
                 feed.prevval = feed.val
                 feed.prevttl = feed.ttl
             })
+           */
             await Promise.all(proms)
         } catch (e) {
             debug('scanilk failed:')

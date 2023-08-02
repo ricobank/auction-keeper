@@ -220,6 +220,7 @@ contract Strat is UniSwapper {
     ) external {
         // UPDATE ONCE BAIL IS UPDATED TO DECODE
         bytes memory ink = Vat(bank).bail(i, u);
+        console.log("INK LEN %s", ink.length);
         uint MINT = Vat(bank).MINT();
         if (fliptype == FlipType.FLIP_GEM) {
             address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
