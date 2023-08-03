@@ -529,7 +529,6 @@ const scanilk = async (i :string) => {
                 if (hook.profitable(i, u, cut, bill, rush)) {
                     let urnfeeds :FeedPtr[] = hook.getUrnFeeds(i, u)
                     let gems :Address[] = hook.getGems(i, u)
-                    console.log("FLIPPING WITH GEMS", gems)
                     let srcs = urnfeeds.map(f => f.src)
                     let tags = urnfeeds.map(f => ethers.utils.hexlify(b32(f.tag)))
                     proms.push(new Promise(async (resolve, reject) => {
@@ -550,7 +549,7 @@ const scanilk = async (i :string) => {
                             debug(`fill_flip success on urn (${i},${u})`)
                         } catch (e) {
                             debug(`failed to flip urn (${i}, ${u})`)
-                            //debug(e)
+                            debug(e)
                         }
                         resolve(null)
                     }))

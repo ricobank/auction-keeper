@@ -217,8 +217,7 @@ contract Strat is UniSwapper {
         address usr,
         FlipType fliptype
     ) external {
-        // UPDATE ONCE BAIL IS UPDATED TO DECODE
-        bytes memory ink = abi.decode(Vat(bank).bail(i, u), (bytes));
+        bytes memory ink = Vat(bank).bail(i, u);
         uint MINT = Vat(bank).MINT();
         if (fliptype == FlipType.FLIP_GEM) {
             address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));

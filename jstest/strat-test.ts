@@ -64,7 +64,7 @@ describe('keeper', () => {
         dai = dapp.dai
         debug(`BANK at ${bank.address}`)
 
-        debug('set weth feed', ALI, b32('weth:rico').toString(), mdn.address)
+        debug('set weth feed', ALI, b32('weth:ref').toString(), mdn.address)
         debug('gem addresses:')
         debug(`    weth:   ${weth.address}`)
         debug(`    dai:    ${dai.address}`)
@@ -86,7 +86,7 @@ describe('keeper', () => {
 
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('weth:rico'), bn2b32(ray(1)), await gettime() * 2)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(1)), await gettime() * 2)
 
         let args = {
           signer: ali,
@@ -117,7 +117,6 @@ describe('keeper', () => {
             method: "hardhat_stopImpersonatingAccount",
             params: [botaddr]
         });
-
 
         debug('calling join pool')
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
@@ -175,7 +174,7 @@ describe('keeper', () => {
         await send(bank.frob, b32('weth'), ALI, dink, amt)
 
         await delay(DELAY)
-        await send(fb.push, b32('weth:rico'), bn2b32(ray(0.5)), await gettime() * 2)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.5)), await gettime() * 2)
         // TODO maybe use events?
         await delay(DELAY * 3)
 
@@ -191,7 +190,7 @@ describe('keeper', () => {
         let dink = ethers.utils.solidityPack(["int256"], [amt])
         let riskbefore = await risk.balanceOf(ALI)
         await send(bank.frob, b32('weth'), ALI, dink, amt)
-        await send(fb.push, b32('weth:rico'), bn2b32(ray(0)), await gettime() * 2)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0)), await gettime() * 2)
         await send(bank.bail, b32('weth'), ALI)
         await delay(DELAY * 5)
 
@@ -236,7 +235,7 @@ describe('keeper', () => {
             b32(':uninft'), b32('fsrc'), b32(':uninft'), rpaddr(dai.address), rpaddr(ALI)
         )
         await send(bank.filhi2,
-            b32(':uninft'), b32('ftag'), b32(':uninft'), rpaddr(dai.address), b32('dai:rico')
+            b32(':uninft'), b32('ftag'), b32(':uninft'), rpaddr(dai.address), b32('dai:ref')
         )
         await send(bank.filhi2,
             b32(':uninft'), b32('fsrc'), b32(':uninft'), rpaddr(rico.address), rpaddr(ALI)
@@ -245,7 +244,7 @@ describe('keeper', () => {
             b32(':uninft'), b32('ftag'), b32(':uninft'), rpaddr(rico.address), b32('ONE')
         )
  
-        await send(fb.push, b32('dai:rico'), bn2b32(ray(1)), ethers.constants.MaxUint256)
+        await send(fb.push, b32('dai:ref'), bn2b32(ray(1)), ethers.constants.MaxUint256)
         await send(fb.push, b32('ONE'), bn2b32(ray(1)), ethers.constants.MaxUint256)
         await delay(DELAY * 2)
  
@@ -255,7 +254,7 @@ describe('keeper', () => {
 
         await delay(DELAY)
         want(await nfpm.ownerOf(ricodaitokid)).eql(bank.address)
-        await send(fb.push, b32('dai:rico'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
+        await send(fb.push, b32('dai:ref'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
         await delay(DELAY * 5)
         want(await nfpm.ownerOf(ricodaitokid)).eql(ALI)
     })
