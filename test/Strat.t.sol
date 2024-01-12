@@ -19,6 +19,8 @@ contract StratTest is Test, RicoSetUp {
     address public achap;
     uint public constant flash_size = 100;
     address constant public UNI_NFT_ADDR = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
+    address constant public universalRouter = 0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD;
+
     uint golddaitokid;
     uint golddaitokid2;
     uint golddaitokid3;
@@ -49,6 +51,7 @@ contract StratTest is Test, RicoSetUp {
         init_gold();
         init_dai();
         gold.approve(bank, UINT256_MAX);
+
         vm.prank(VAULT);
         dai.transfer(self, 1000000 * WAD);
 
@@ -57,7 +60,7 @@ contract StratTest is Test, RicoSetUp {
         uint160 onex96 = 2 ** 96;
         PoolArgs memory args = PoolArgs(
             Asset(agold, 25000 * WAD), Asset(DAI, 25000 * WAD),
-            3000, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 60
+            3000, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 60, self
         );
         (golddaitokid,,,) = create_and_join_pool(args);
         (golddaitokid2,,,) = create_and_join_pool(args);
@@ -67,19 +70,19 @@ contract StratTest is Test, RicoSetUp {
 
         args = PoolArgs(
             Asset(arico, 25000 * WAD), Asset(DAI, 25000 * WAD),
-            500, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 10
+            500, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 10, self
         );
 
-        (ricodaitokid,,,) = join_pool(args);
+        (ricodaitokid,,,) = create_and_join_pool(args);
 
         risk.mint(self, 100000 * WAD);
         args = PoolArgs(
             Asset(arico, 25000 * WAD), Asset(arisk, 25000 * WAD),
-            3000, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 60
+            3000, onex96, onex96 * 3 / 4, onex96 * 4 / 3, 60, self
         );
-        (ricorisktokid,,,) = join_pool(args);
+        (ricorisktokid,,,) = create_and_join_pool(args);
 
-        strat = new Strat(bank, ball.ploker(), 0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD);
+        strat = new Strat(bank, UNI_NFT_ADDR, universalRouter);
         bytes memory fore; bytes memory rear;
         {
             address [] memory addr2 = new address[](2);
@@ -139,29 +142,27 @@ contract StratTest is Test, RicoSetUp {
     }
 
     function test_fill_flip_uni() public {
-        Vat(bank).filhi2(
-            uilk, 'fsrc', uilk, bytes32(bytes20(agold)), bytes32(bytes20(self))
-        );
-        Vat(bank).filhi2(
-            uilk, 'ftag', uilk, bytes32(bytes20(agold)), bytes32(bytes20(grtag))
-        );
-        Vat(bank).filhi2(
-            uilk, 'fsrc', uilk, bytes32(bytes20(address(dai))), bytes32(bytes20(self))
-        );
-        Vat(bank).filhi2(
-            uilk, 'ftag', uilk, bytes32(bytes20(address(dai))), bytes32(bytes20(drtag))
-        );
+        Vat(bank).filh(uilk, 'src', single(bytes32(bytes20(agold))), bytes32(bytes20(self)));
+        Vat(bank).filh(uilk, 'tag', single(bytes32(bytes20(agold))), grtag);
+        Vat(bank).filh(uilk, 'liqr', single(bytes32(bytes20(agold))), bytes32(RAY));
+        Vat(bank).filh(uilk, 'src', single(bytes32(bytes20(DAI))), bytes32(bytes20(self)));
+        Vat(bank).filh(uilk, 'tag', single(bytes32(bytes20(DAI))), drtag);
+        Vat(bank).filh(uilk, 'liqr', single(bytes32(bytes20(DAI))), bytes32(RAY));
         Vat(bank).filk(uilk, 'line', bytes32(100000 * RAD));
         feed.push(drtag, bytes32(RAY * 2), UINT256_MAX);
         feed.push(grtag, bytes32(RAY * 2), UINT256_MAX);
         nfpm.approve(bank, golddaitokid);
         nfpm.approve(bank, golddaitokid2);
         nfpm.approve(bank, golddaitokid3);
+        uint[] memory dink = new uint[](4);
+        (dink[0], dink[1], dink[2], dink[3]) = (
+            1, golddaitokid, golddaitokid2, golddaitokid3
+        );
         Vat(bank).frob(
             uilk,
             self,
             // this is all the liquidity in the pool...will fail if it needs all 3
-            abi.encodePacked(int(1), golddaitokid, golddaitokid2, golddaitokid3),
+            abi.encode(dink),
             int(25000 * WAD)
         );
         feed.push(drtag, bytes32(RAY / 6), UINT256_MAX);
@@ -183,7 +184,7 @@ contract StratTest is Test, RicoSetUp {
     }
 
     function test_fill_flap() public {
-        Vat(bank).frob(gilk, self, abi.encodePacked(int(25000 * WAD)), int(25000 * WAD));
+        Vat(bank).frob(gilk, self, abi.encode(int(25000 * WAD)), int(25000 * WAD));
         skip(BANKYEAR);
         Vat(bank).drip(gilk);
 
@@ -191,10 +192,11 @@ contract StratTest is Test, RicoSetUp {
         uint riskbefore = risk.balanceOf(self);
         assertEq(rico.balanceOf(address(strat)), 0);
         assertEq(risk.balanceOf(address(strat)), 0);
-        feedpush(RICO_RISK_TAG, bytes32(RAY), UINT256_MAX);
+        feedpush(RISK_RICO_TAG, bytes32(RAY), UINT256_MAX);
         strat.fill_flap(new bytes32[](0));
         assertGt(rico.balanceOf(self), ricobefore);
-        assertEq(risk.balanceOf(self), riskbefore);
+        assertGe(risk.balanceOf(self), riskbefore);
+        assertLt(risk.balanceOf(self), riskbefore + 100);
     }
 
     function test_fill_flop() public {

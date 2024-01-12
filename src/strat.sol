@@ -6,8 +6,8 @@ pragma solidity ^0.8.19;
 import {Vow} from '../lib/ricobank/src/vow.sol';
 import {Vat} from '../lib/ricobank/src/vat.sol';
 import {Vox} from '../lib/ricobank/src/vox.sol';
+import {Bank} from '../lib/ricobank/src/bank.sol';
 import {File} from '../lib/ricobank/src/file.sol';
-import {Ploker} from '../lib/ricobank/lib/feedbase/src/Ploker.sol';
 
 //import { ISwapRouter } from './TEMPinterface.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
@@ -16,6 +16,7 @@ import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
 import {UniNFTHook} from '../lib/ricobank/src/hook/nfpm/UniV3NFTHook.sol';
 import {Feedbase} from '../lib/ricobank/lib/feedbase/src/Feedbase.sol';
 import {INonfungiblePositionManager} from './TEMPinterface.sol';
+import 'forge-std/Test.sol';
 
 interface IUniversalRouter {
     function execute(bytes calldata commands, bytes[] calldata inputs, uint deadline) external;
@@ -78,10 +79,11 @@ contract Strat is UniSwapper {
     Gem public rico;
     Gem public risk;
     Feedbase public fb;
-    Ploker ploker;
+    INonfungiblePositionManager public NFPM;
     error ErrSwap();
     error ErrBail();
     error ErrFlap();
+    error ErrTime();
     error ErrFlop();
     error ErrSrcsTagsLength();
     event FlipFailed(bytes data);
@@ -89,17 +91,17 @@ contract Strat is UniSwapper {
 
     enum FlipType { FLIP_GEM, FLIP_UNI_NFT }
     
-    constructor(address payable _bank, Ploker _ploker, address _router) {
+    constructor(address payable _bank, address _NFPM, address _router) {
         bank = _bank;
         rico = File(bank).rico();
         risk = Vow(bank).RISK();
         rico.approve(bank, type(uint).max);
         risk.approve(bank, type(uint).max);
         fb = File(bank).fb();
-        ploker = _ploker;
         router = IUniversalRouter(_router);
         rico.approve(address(router), type(uint).max);
         risk.approve(address(router), type(uint).max);
+        NFPM = INonfungiblePositionManager(_NFPM);
     }
 
     function fill_flip(
@@ -111,10 +113,6 @@ contract Strat is UniSwapper {
     ) external {
         if (srcs.length != tags.length) revert ErrSrcsTagsLength();
         if (Vox(bank).way() > RAY) { Vox(bank).poke(); }
-        for (uint j = 0; j < srcs.length; j++) {
-            (,uint ttl) = fb.pull(srcs[j], tags[j]);
-            if (ttl < block.timestamp) ploker.ploke(tags[j]);
-        }
         bytes memory flipdata = abi.encodeWithSelector(
             Strat.flip.selector, i, u, msg.sender, fliptype
         );
@@ -157,29 +155,22 @@ contract Strat is UniSwapper {
 
 
     function _swap_uni(
-      INonfungiblePositionManager nfpm,
       address usr,
       uint MINT,
-      bytes memory ink
+      uint[] memory ink
     ) internal {
-        uint[] memory tokenIds = new uint[](ink.length / 32);
-        for (uint i = 0; i < ink.length; i += 32) {
-            uint tokenId;
-            for (uint j = 0; j < 32; j++) {
-               tokenId = tokenId + (uint(uint8(ink[i+j])) << ((31 - j) * 8));
-            }
-
-            tokenIds[i / 32] = tokenId;
+        for (uint i = 0; i < ink.length; i++) {
+            uint tokenId = ink[i];
 
             uint ricobal = rico.balanceOf(address(this));
             if (ricobal < MINT) {
-                (,,address t0,address t1,,,,uint128 liquidity,,,,) = nfpm.positions(tokenId);
-                nfpm.decreaseLiquidity(
+                (,,address t0,address t1,,,,uint128 liquidity,,,,) = NFPM.positions(tokenId);
+                NFPM.decreaseLiquidity(
                     INonfungiblePositionManager.DecreaseLiquidityParams(
                         tokenId, liquidity, 0, 0, block.timestamp
                     )
                 );
-                nfpm.collect(INonfungiblePositionManager.CollectParams(
+                NFPM.collect(INonfungiblePositionManager.CollectParams(
                     tokenId, address(this), type(uint128).max, type(uint128).max
                 ));
  
@@ -199,14 +190,14 @@ contract Strat is UniSwapper {
                         t1, address(router), type(uint160).max, uint48(block.timestamp)
                     );
                     uint need = MINT - ricobal;
-                    swap(t1, address(rico), address(this), need, uint(bytes32(ink)));
+                    swap(t1, address(rico), address(this), need, block.timestamp);
                 }
 
                 if (t1 != address(rico)) Gem(t1).transfer(usr, Gem(t1).balanceOf(address(this)));
                 if (t0 != address(rico)) Gem(t0).transfer(usr, Gem(t0).balanceOf(address(this)));
             }
 
-            nfpm.transferFrom(address(this), usr, tokenId);
+            NFPM.transferFrom(address(this), usr, tokenId);
         }
     }
 
@@ -220,13 +211,10 @@ contract Strat is UniSwapper {
         bytes memory ink = Vat(bank).bail(i, u);
         uint MINT = Vat(bank).MINT();
         if (fliptype == FlipType.FLIP_GEM) {
-            address gem = address(bytes20(Vat(bank).gethi(i, 'gem', i)));
+            address gem = address(bytes20(Vat(bank).geth(i, 'gem', new bytes32[](0))));
             _swap_gem(gem, usr, MINT, ink);
         } else if (fliptype == FlipType.FLIP_UNI_NFT) {
-            INonfungiblePositionManager nfpm = INonfungiblePositionManager(
-                address(bytes20(Vat(bank).geth(i, 'nfpm')))
-            );
-            _swap_uni(nfpm, usr, MINT, ink);
+            _swap_uni(usr, MINT, abi.decode(ink, (uint[])));
         }
         uint ricobal = rico.balanceOf(address(this));
         if (ricobal > MINT) rico.transfer(usr, ricobal - MINT);
@@ -234,22 +222,27 @@ contract Strat is UniSwapper {
 
     function flap(address usr, bytes32[] calldata ilks) external returns (uint ricogain, uint riskgain) {
         uint ricobefore = rico.balanceOf(address(this));
-        uint flaprico = rico.balanceOf(address(bank)) - Vat(bank).sin() / RAY;
-        uint rush;  uint price;
+        uint flaprico = Vat(bank).joy() - Vat(bank).sin() / RAY;
+        uint mash;  uint earn;
         {
-            uint debt = Vat(bank).debt();
-            (uint pep, uint pop) = Vow(bank).flapplot();
-            rush = (debt * pop + flaprico * pep) / debt;
-            (address flapsrc, bytes32 flaptag) = Vow(bank).flapfeed();
-            (bytes32 val,) = fb.pull(flapsrc, flaptag);
-            price = uint(val);
+            Vow.Rudd memory rudd = Vow(bank).rudd();
+            Vow.Plx  memory plat = Vow(bank).plat();
+
+            (bytes32 price, uint ttl) = fb.pull(rudd.src, rudd.tag);
+            if (ttl < block.timestamp) revert ErrTime();
+
+            uint mcap = rmul(risk.totalSupply(), uint(price));
+            uint deal = rdiv(mcap, mcap + Vat(bank).joy());
+
+            mash = rmash(deal, plat.pep, plat.pop, plat.pup);
+            earn = rmul(flaprico, rdiv(mash, uint(price)));
         }
 
         rico.approve(address(PERMIT2), type(uint).max);
         Permit2(PERMIT2).approve(address(rico), address(router), type(uint160).max, uint48(block.timestamp));
         swap(
             address(rico), address(risk), address(this),
-            flaprico * price / rush, rico.balanceOf(address(this))
+            earn, rico.balanceOf(address(this))
         );
 
         ricobefore = rico.balanceOf(address(this));
