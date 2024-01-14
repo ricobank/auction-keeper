@@ -22,7 +22,7 @@ const hzp = ethers.utils.hexZeroPad
 const rpaddr = a => a + '00'.repeat(12)
 let worker
 
-let fb, bank, strat, keeper, ploker, weth, rico, mdn, dapp, divider
+let fb, bank, strat, keeper, ploker, weth, rico, dapp, divider
 let nfpm, factory, router, risk
 let ALI, BOB, CAT
 
@@ -48,6 +48,7 @@ describe('keeper', () => {
                 tokens: './tokens.json'
             }
         )
+
         dapp = await dpack.load(pack, ethers, ali)
 
         fb = dapp.feedbase
@@ -57,23 +58,23 @@ describe('keeper', () => {
         weth = await ethers.getContractAt('WethLike', dapp.weth.address)
         rico = dapp.rico
         risk = dapp.risk
-        mdn = dapp.mdn
         divider = dapp.divider
         nfpm = dapp.nonfungiblePositionManager
         router = dapp.swapRouter
         dai = dapp.dai
         debug(`BANK at ${bank.address}`)
 
-        debug('set weth feed', ALI, b32('weth:ref').toString(), mdn.address)
+        debug('set weth feed', ALI, b32('weth:ref').toString())
         debug('gem addresses:')
         debug(`    weth:   ${weth.address}`)
         debug(`    dai:    ${dai.address}`)
         debug(`    rico:   ${rico.address}`)
         debug(`    risk:   ${risk.address}`)
         debug(`    wsteth: ${dapp.wsteth.address}`)
-        await send(bank.filhi, b32('weth'), b32('fsrc'), b32('weth'), ALI + '00'.repeat(12))
-        await send(bank.file, b32('flapsrc'), ALI + '00'.repeat(12))
-        await send(bank.file, b32('flopsrc'), ALI + '00'.repeat(12))
+        await send(bank.filh, b32('weth'), b32('src'), [], ALI + '00'.repeat(12))
+        await send(bank.filh, b32('weth'), b32('tag'), [], b32('weth:ref'))
+        await send(bank.filh, b32('weth'), b32('liqr'), [], bn2b32(ray(1)))
+        await send(bank.file, b32('rudd.src'), ALI + '00'.repeat(12))
         debug('set strat router+path')
         let {fore, rear} = create_path([weth.address, dai.address, rico.address], [500, 500])
         await send(strat.setPath, weth.address, rico.address, fore, rear);
@@ -85,7 +86,6 @@ describe('keeper', () => {
         await send(strat.setPath, risk.address, rico.address, fore, rear);
 
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), await gettime() * 2)
-        await send(fb.push, b32('rico:risk'), bn2b32(ray(1)), await gettime() * 2)
         await send(fb.push, b32('weth:ref'), bn2b32(ray(1)), await gettime() * 2)
 
         let args = {
@@ -122,11 +122,15 @@ describe('keeper', () => {
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
         await send(weth.deposit, {value: amt.mul(4)})
         await send(weth.transfer, BOB, amt.mul(4))
-        let dink = ethers.utils.solidityPack(["int256"], [amt.mul(2)])
+        let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(3)])
         await weth.connect(bob).callStatic.approve(bank.address, ethers.constants.MaxUint256)
+        debug("HIHI", amt.mul(2), ALI, BOB)
         await send(weth.connect(bob).approve, bank.address, ethers.constants.MaxUint256, {gasLimit: 10000000})
+        debug("HIHI", await bank.geth(b32('weth'), b32('liqr'), []), await bank.safe(b32('weth'), BOB), await bank.ink(b32('weth'), BOB))
         await send(bank.connect(bob).frob, b32('weth'), BOB, dink, amt.mul(2), {gasLimit: 100000000})
+        debug("HIHI OK")
         await send(rico.connect(bob).transfer, ALI, await rico.balanceOf(BOB), {gasLimit: 100000000})
+        debug("HIHI")
 
         let joinres = await join_pool({
             nfpm: nfpm, ethers: ethers, ali: ali,
@@ -135,9 +139,11 @@ describe('keeper', () => {
             fee: 500,
             tickSpacing: 10
         })
+        debug("HIHI")
         ricodaitokid = joinres.tokenId
         dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(risk.mint, ALI, amt)
+        debug("HIHI")
         await join_pool({
             nfpm: nfpm, ethers: ethers, ali: ali,
             a1: { token: rico.address, amountIn: amt },
@@ -145,6 +151,7 @@ describe('keeper', () => {
             fee: 3000,
             tickSpacing: 60
         })
+        debug("HIHI")
 
         await send(rico.approve, bank.address, ethers.constants.MaxUint256)
 
@@ -168,13 +175,13 @@ describe('keeper', () => {
 
     it('fill_flip gem', async () => {
 
-        await send(weth.deposit, {value: amt})
+        await send(weth.deposit, {value: amt.mul(2)})
 
-        let dink = ethers.utils.solidityPack(["int256"], [amt])
+        let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(2)])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
 
         await delay(DELAY)
-        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.5)), await gettime() * 2)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.25)), await gettime() * 2)
         // TODO maybe use events?
         await delay(DELAY * 3)
 
@@ -231,26 +238,34 @@ describe('keeper', () => {
     it('fill_flip uni', async () => {
         await delay(2000)
         await send(bank.filk, b32(':uninft'), b32('line'), bn2b32(amt.mul(ray(10))))
-        await send(bank.filhi2,
-            b32(':uninft'), b32('fsrc'), b32(':uninft'), rpaddr(dai.address), rpaddr(ALI)
+        await send(bank.filh,
+            b32(':uninft'), b32('src'), [rpaddr(dai.address)], rpaddr(ALI)
         )
-        await send(bank.filhi2,
-            b32(':uninft'), b32('ftag'), b32(':uninft'), rpaddr(dai.address), b32('dai:ref')
+        await send(bank.filh,
+            b32(':uninft'), b32('tag'), [rpaddr(dai.address)], b32('dai:ref')
         )
-        await send(bank.filhi2,
-            b32(':uninft'), b32('fsrc'), b32(':uninft'), rpaddr(rico.address), rpaddr(ALI)
+        await send(bank.filh,
+            b32(':uninft'), b32('liqr'), [rpaddr(dai.address)], bn2b32(ray(1))
         )
-        await send(bank.filhi2,
-            b32(':uninft'), b32('ftag'), b32(':uninft'), rpaddr(rico.address), b32('ONE')
+ 
+        await send(bank.filh,
+            b32(':uninft'), b32('src'), [rpaddr(rico.address)], rpaddr(ALI)
         )
+        await send(bank.filh,
+            b32(':uninft'), b32('tag'), [rpaddr(rico.address)], b32('ONE')
+        )
+        await send(bank.filh,
+            b32(':uninft'), b32('liqr'), [rpaddr(rico.address)], bn2b32(ray(1))
+        )
+ 
  
         await send(fb.push, b32('dai:ref'), bn2b32(ray(1)), ethers.constants.MaxUint256)
         await send(fb.push, b32('ONE'), bn2b32(ray(1)), ethers.constants.MaxUint256)
         await delay(DELAY * 2)
  
         await send(nfpm.approve, bank.address, ricodaitokid)
-        let dink = ethers.utils.solidityPack(['uint', 'uint'], [1, ricodaitokid])
-        await send(bank.frob, b32(':uninft'), ALI, dink, amt.mul(3).div(2))
+        let dink = ethers.utils.defaultAbiCoder.encode(['uint[]'], [[1, ricodaitokid]])
+        await send(bank.frob, b32(':uninft'), ALI, dink, amt, {gasLimit: 10000000000})
 
         await delay(DELAY)
         want(await nfpm.ownerOf(ricodaitokid)).eql(bank.address)
