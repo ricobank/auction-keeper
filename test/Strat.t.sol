@@ -120,8 +120,6 @@ contract StratTest is Test, RicoSetUp {
             strat.setPath(DAI, arico, fore, rear);
         }
 
-
-
     }
 
     function test_fill_flip_gem() public {
@@ -133,9 +131,7 @@ contract StratTest is Test, RicoSetUp {
         assertEq(rico.balanceOf(address(strat)), 0);
         assertEq(gold.balanceOf(address(strat)), 0);
 
-        address[] memory srcs = new address[](0);
-        bytes32[] memory tags = new bytes32[](0);
-        strat.fill_flip(gilk, self, srcs, tags, Strat.FlipType.FLIP_GEM);
+        strat.fill_flip(gilk, self, Strat.FlipType.FLIP_GEM);
 
         assertGe(rico.balanceOf(self), ricobefore);
         assertGt(gold.balanceOf(self), goldbefore);
@@ -165,11 +161,10 @@ contract StratTest is Test, RicoSetUp {
             abi.encode(dink),
             int(25000 * WAD)
         );
+
         feed.push(drtag, bytes32(RAY / 6), UINT256_MAX);
         feed.push(grtag, bytes32(RAY / 6), UINT256_MAX);
-        address[] memory srcs = new address[](0);
-        bytes32[] memory tags = new bytes32[](0);
-        strat.fill_flip(uilk, self, srcs, tags, Strat.FlipType.FLIP_UNI_NFT);
+        strat.fill_flip(uilk, self, Strat.FlipType.FLIP_UNI_NFT);
 
         assertEq(nfpm.ownerOf(golddaitokid), self);
         assertEq(nfpm.ownerOf(golddaitokid2), self);
@@ -181,39 +176,5 @@ contract StratTest is Test, RicoSetUp {
         assertEq(liquidity, 0);
         (,,,,,,,liquidity,,,,) = nfpm.positions(golddaitokid3);
         assertGt(liquidity, 0);
-    }
-
-    function test_fill_flap() public {
-        Vat(bank).frob(gilk, self, abi.encode(int(25000 * WAD)), int(25000 * WAD));
-        skip(BANKYEAR);
-        Vat(bank).drip(gilk);
-
-        uint ricobefore = rico.balanceOf(self);
-        uint riskbefore = risk.balanceOf(self);
-        assertEq(rico.balanceOf(address(strat)), 0);
-        assertEq(risk.balanceOf(address(strat)), 0);
-        feedpush(RISK_RICO_TAG, bytes32(RAY), UINT256_MAX);
-        strat.fill_flap(new bytes32[](0));
-        assertGt(rico.balanceOf(self), ricobefore);
-        assertGe(risk.balanceOf(self), riskbefore);
-        assertLt(risk.balanceOf(self), riskbefore + 100);
-    }
-
-    function test_fill_flop() public {
-        skip(BANKYEAR);
-
-        feedpush(grtag, bytes32(RAY * 2), UINT256_MAX);
-        Vat(bank).frob(gilk, self, abi.encodePacked(int(25000 * WAD)), int(25000 * WAD));
-        feedpush(grtag, bytes32(0), UINT256_MAX);
-        Vat(bank).bail(gilk, self);
-
-        uint ricobefore = rico.balanceOf(self);
-        uint riskbefore = risk.balanceOf(self);
-        assertEq(rico.balanceOf(address(strat)), 0);
-        assertEq(risk.balanceOf(address(strat)), 0);
-        feedpush(RISK_RICO_TAG, bytes32(RAY), UINT256_MAX);
-        strat.fill_flop();
-        assertEq(rico.balanceOf(self), ricobefore);
-        assertGt(risk.balanceOf(self), riskbefore);
     }
 }

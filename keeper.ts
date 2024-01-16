@@ -449,8 +449,8 @@ const scanilk = (i :string) => {
                         let fliptype = 0
                         if (i.startsWith(':uninft')) fliptype = 1
                         let tx = await send(
-                            strat.fill_flip, b32(i), u,
-                            [], [], fliptype, {gasLimit: 10000000}
+                            strat.fill_flip,
+                            b32(i), u, fliptype, {gasLimit: 10000000}
                         )
                         delete info.urns[u]
                         debug(`fill_flip success on urn (${i},${u})`)
