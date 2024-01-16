@@ -9,7 +9,6 @@ import {Vox} from '../lib/ricobank/src/vox.sol';
 import {Bank} from '../lib/ricobank/src/bank.sol';
 import {File} from '../lib/ricobank/src/file.sol';
 
-//import { ISwapRouter } from './TEMPinterface.sol';
 import {Ward} from '../lib/ricobank/lib/feedbase/src/mixin/ward.sol';
 import {Math} from '../lib/ricobank/src/mixin/math.sol';
 import {Gem} from '../lib/ricobank/lib/gemfab/src/gem.sol';
@@ -85,7 +84,6 @@ contract Strat is UniSwapper {
     error ErrTime();
     error ErrFlop();
     error ErrSrcsTagsLength();
-    event FlipFailed(bytes data);
     event Flip(bytes32 i, address u);
 
     enum FlipType { FLIP_GEM, FLIP_UNI_NFT }
