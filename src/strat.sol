@@ -52,7 +52,7 @@ abstract contract UniSwapper is Ward, Math {
     }
 
     function swap(
-        address tokIn, address tokOut, address receiver, uint amt, uint limit
+        address tokIn, address tokOut, address receiver, uint amt
     ) internal {
         // upper bits 0, lower bits V3_SWAP_EXACT_OUT
         bytes   memory commands = abi.encodePacked(bytes1(0x01)); 
@@ -61,12 +61,13 @@ abstract contract UniSwapper is Ward, Math {
 
         if (path.rear.length == 0) revert ErrNoPath(tokIn, tokOut);
 
-        inputs[0] = abi.encode(receiver, amt, limit, path.rear, true);
+        uint have = Gem(tokIn).balanceOf(address(this));
+        inputs[0] = abi.encode(receiver, amt, have, path.rear, true);
 
         try router.execute(commands, inputs, block.timestamp) {}
         catch {
             commands  = abi.encodePacked(bytes1(0x00));
-            inputs[0] = abi.encode(receiver, limit, 0, path.fore, true);
+            inputs[0] = abi.encode(receiver, have, 0, path.fore, true);
             try router.execute(commands, inputs, block.timestamp) {}
             catch {}
         }
@@ -114,7 +115,7 @@ contract Strat is UniSwapper {
         Vat(bank).flash(address(this), flipdata);
     }
 
-    function _swap_gem(address gem, address usr, uint MINT, bytes memory ink)
+    function _swap_gem(address gem, address usr, uint MINT)
       internal {
         // swap to replenish what was paid for the flip
         uint ricobal = rico.balanceOf(address(this));
@@ -124,7 +125,7 @@ contract Strat is UniSwapper {
                 gem, address(router), type(uint160).max, uint48(block.timestamp)
             );
             uint need = MINT - ricobal;
-            swap(gem, address(rico), address(this), need, uint(bytes32(ink)));
+            swap(gem, address(rico), address(this), need);
         }
 
         // give extra funds back to caller
@@ -167,7 +168,7 @@ contract Strat is UniSwapper {
                         t0, address(router), type(uint160).max, uint48(block.timestamp)
                     );
                     uint need = MINT - ricobal;
-                    swap(t0, address(rico), address(this), need, block.timestamp);
+                    swap(t0, address(rico), address(this), need);
                     ricobal = rico.balanceOf(address(this));
                 }
 
@@ -177,8 +178,9 @@ contract Strat is UniSwapper {
                     Permit2(PERMIT2).approve(
                         t1, address(router), type(uint160).max, uint48(block.timestamp)
                     );
+
                     uint need = MINT - ricobal;
-                    swap(t1, address(rico), address(this), need, block.timestamp);
+                    swap(t1, address(rico), address(this), need);
                 }
 
                 // send back the non-RICO tokens left over
@@ -210,7 +212,7 @@ contract Strat is UniSwapper {
         if (fliptype == FlipType.FLIP_GEM) {
             // swap the gems for Rico until have MINT Rico, and send gems to sender
             address gem = address(bytes20(Vat(bank).geth(i, 'gem', new bytes32[](0))));
-            _swap_gem(gem, usr, MINT, ink);
+            _swap_gem(gem, usr, MINT);
         } else if (fliptype == FlipType.FLIP_UNI_NFT) {
             // drain the NFTs and swap their gems for Rico until have MINT Rico
             // send gems to sender

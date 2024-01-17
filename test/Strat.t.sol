@@ -173,7 +173,7 @@ contract StratTest is Test, RicoSetUp {
         (,,,,,,,uint128 liquidity,,,,) = nfpm.positions(golddaitokid);
         assertEq(liquidity, 0);
         (,,,,,,,liquidity,,,,) = nfpm.positions(golddaitokid2);
-        assertEq(liquidity, 0);
+        assertGt(liquidity, 0);
         (,,,,,,,liquidity,,,,) = nfpm.positions(golddaitokid3);
         assertGt(liquidity, 0);
     }
