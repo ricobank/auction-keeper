@@ -111,6 +111,8 @@ describe('keeper', () => {
     let DELAY = 1000
     let ricodaitokid
     let dai
+    let aue
+    let pr
     before(async () => {
         [ali, bob, cat] = await ethers.getSigners();
         [ALI, BOB, CAT] = [ali, bob, cat].map(signer => signer.address)
@@ -162,6 +164,15 @@ describe('keeper', () => {
         await send(fb.push, b32('risk:rico'), bn2b32(ray(1)), constants.MaxUint256)
         await send(fb.push, b32('weth:ref'), bn2b32(ray(1)), constants.MaxUint256)
 
+        // answerupdatedemitter
+        const aue_artifact = require('../artifacts/src/ProxyReader.sol/AnswerUpdatedEmitter.json')
+        const aue_type = ethers.ContractFactory.fromSolidity(aue_artifact, ali)
+        aue = await aue_type.deploy()
+
+        const pr_artifact = require('../artifacts/src/ProxyReader.sol/ProxyReader.json')
+        const pr_type = ethers.ContractFactory.fromSolidity(pr_artifact, ali)
+        pr = await pr_type.deploy(fb.address, ali.address)
+
         let args = {
           signer: ali,
           netname: hh.network.name,
@@ -171,8 +182,12 @@ describe('keeper', () => {
           minprofit: wad(5),
           expected_rico: wad(10),
           expected_risk: wad(10),
-          poketime: '100'
+          poketime: '100',
+          aggs: {}
         }
+
+        // map aggregator to (src, tag) pairs
+        args.aggs[aue.address] = [{ src: pr.address, tag: 'weth:ref' }]
 
         await run_keeper(args)
 
@@ -220,15 +235,6 @@ describe('keeper', () => {
 
         await send(rico.approve, bank.address, ethers.constants.MaxUint256)
 
-        /*
-        await send(bank.file, b32("tag"), TAG)
-        await send(bank.link, b32("tip"), ALI)
-
-        await send(bank.file, b32("cap"), b32(ray(3)))
-
-        await send(bank.file, b32('par'), b32(wad(7)))
-         */
-
         await snapshot(hh);
     })
 
@@ -239,7 +245,6 @@ describe('keeper', () => {
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
     it('fill_flip gem', async () => {
-
         await send(weth.deposit, {value: amt.mul(2)})
 
         let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(2)])
@@ -247,7 +252,6 @@ describe('keeper', () => {
 
         await delay(DELAY)
         await send(fb.push, b32('weth:ref'), bn2b32(ray(0.25)), constants.MaxUint256)
-        // TODO maybe use events?
         await delay(DELAY * 3)
 
         let art = await bank.urns(b32('weth'), ALI)
@@ -293,6 +297,27 @@ describe('keeper', () => {
         await send(fb.push, b32('dai:ref'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
         await delay(DELAY * 5)
         want(await nfpm.ownerOf(ricodaitokid)).eql(ALI)
+    })
+
+    it('fill_flip chainlink gem', async () => {
+        await send(bank.filh, b32('weth'), b32('src'), [], rpaddr(pr.address))
+
+        await send(weth.deposit, {value: amt.mul(2)})
+
+        let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(2)])
+        await send(bank.frob, b32('weth'), ALI, dink, amt)
+
+        await delay(DELAY)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.25)), constants.MaxUint256)
+        await delay(DELAY * 3)
+
+        let art = await bank.urns(b32('weth'), ALI)
+        want(art.gt(ethers.constants.Zero)).true
+
+        // only reads the result when answerupdated event emitted
+        await send(aue.emitAnswerUpdated)
+        await delay(DELAY * 3)
+        want(await bank.urns(b32('weth'), ALI)).eql(ethers.constants.Zero)
     })
 
 })

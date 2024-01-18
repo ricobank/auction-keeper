@@ -2,6 +2,7 @@ import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine, RAY } from 'minihat
 import { b32, snapshot, revert } from 'minihat'
 import bn from 'bignumber.js'
 import * as ethers from 'ethers'
+import { BigNumber } from 'ethers'
 
 const dpack = require('@etherpacks/dpack')
 const debug = require('debug')('keeper:run')
@@ -12,7 +13,6 @@ let fb, uniwrap
 let ali
 let ilkinfos : IlkInfos = {}
 
-const BigNumber = ethers.BigNumber
 const constants = ethers.constants
 const PALM = [
     'NewPalm0(bytes32,bytes32)',
@@ -21,6 +21,8 @@ const PALM = [
     'NewPalmBytes2(bytes32,bytes32,bytes32,bytes)'
 ].map(ethers.utils.id)
 const [PALM0, PALM1, PALM2, PALMBYTES2] = PALM
+const ANSWERUPDATED = ethers.utils.id('AnswerUpdated(int256,uint256,uint256)')
+const auabi = [ 'event AnswerUpdated(int256 indexed current, uint256 indexed roundId, uint256 updatedAt)' ]
 
 let par : BigNumber
 let way : BigNumber
@@ -557,6 +559,54 @@ const run_keeper = async (args) => {
             //debug(e)
         }
     }
+
+    const saveRead = async (_src, tag) => {
+        const src = _src.toLowerCase()
+        if (!feeds[src]) feeds[src] = {}
+        if (!feeds[src][tag]) feeds[src][tag] = {val: undefined, ttl: undefined}
+        let feed = feeds[src][tag]
+        let [val, ttl] = await fb.pull(src, b32(tag))
+        feed.val = BigNumber.from(val)
+        feed.ttl = ttl
+    }
+
+    for (let agg of Object.keys(args.aggs)) {
+        let clfilter = {
+            address: agg,
+            topics: [ANSWERUPDATED]
+        }
+        events = await bank.queryFilter(clfilter)
+
+        if (events.length > 0) {
+            const readers = args.aggs[agg]
+            for (let reader of readers) {
+                try {
+                    await saveRead(reader.src, reader.tag)
+                } catch (e) {
+                    debug('run_keeper: failed to saveRead')
+                }
+            }
+ 
+        }
+    }
+
+    for (let agg of Object.keys(args.aggs)) {
+        let contract = new ethers.Contract(agg, auabi, ali)
+        let clfilter = contract.filters.AnswerUpdated(null,null,null);
+        contract.on(clfilter, async (_) => {
+            const readers = args.aggs[agg]
+            for (let reader of readers) {
+                try {
+                    await saveRead(reader.src, reader.tag)
+                } catch (e) {
+                    debug('run_keeper: failed to saveRead')
+                    debug(e)
+                }
+ 
+            }
+        })
+    }
+ 
 
     // listen to future feed pushes
     fb.on(fbfilter, async (push) => {
