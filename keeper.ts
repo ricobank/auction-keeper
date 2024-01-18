@@ -47,14 +47,16 @@ type ERC20Info = {
 interface Hook {
     ink :{[i: Ilk]: {[u: Address]: any}}
 
-    cut(i :Ilk, u :Address) :BigNumber;
+    cut(i :Ilk, u :Address) :BigNumber
     profitable(
       i :string,
       u :Address,
       cut :BigNumber,
       bill :BigNumber,
       deal :BigNumber
-    ) :boolean;
+    ) :boolean
+
+    hasInk(i :string, u :Address) :boolean
 }
 
 type Item = {
@@ -86,6 +88,12 @@ class ERC20Hook implements Hook {
       deal :BigNumber
     ) :boolean {
         return deal.lt(RAY)
+    }
+
+    hasInk(i :string, u :Address) :boolean {
+        return this.ink[i] != undefined
+            && this.ink[i][u] != undefined
+            && this.ink[i][u].gt(constants.Zero)
     }
 }
 
@@ -163,6 +171,12 @@ class UniV3NFTHook implements Hook {
         return [t0, t1, a0, a1]
 
     }
+
+    hasInk(i :string, u :Address) :boolean {
+        return this.ink[i] != undefined
+            && this.ink[i][u] != undefined
+            && this.ink[i][u].length > 0
+    }
 }
 
 // storage section name (e.g. ricobank.0) -> Hook
@@ -195,6 +209,14 @@ const xtos = (_ilk) : string => {
     let last = ilk.indexOf(0)
     let sliced = last == -1 ? ilk : ilk.slice(0, last)
     return sliced.toString('utf8')
+}
+
+const isERC20 = (i) => {
+    return i === 'weth'
+}
+
+const isUniNFT = (i) => {
+    return i === ':uninft'
 }
 
 // save data from a Palm event
@@ -242,7 +264,7 @@ const savepalm = async (_palm) => {
             info.fee = BigNumber.from(val)
         } else if (key == 'chop') {
             info.chop = BigNumber.from(val)
-        } else if (idx0 == 'weth') {
+        } else if (isERC20(idx0)) {
 
             let erc20hook :ERC20Hook = hooks['erc20hook.0'] as ERC20Hook
 
@@ -291,7 +313,7 @@ const savepalm = async (_palm) => {
             // save art
             ilkinfos[i].urns[u].art = BigNumber.from(val)
 
-        } else if (xtos(idx0) == ':uninft') {
+        } else if (isUniNFT(xtos(idx0))) {
 
             let uninfthook :UniV3NFTHook = hooks['uninfthook.0'] as UniV3NFTHook
             let gem = u
@@ -337,14 +359,15 @@ const savepalm = async (_palm) => {
 
         if (key == 'ink') {
 
-            if (i === 'weth') {
+            if (isERC20(i)) {
 
                 const hook :ERC20Hook = hooks[info.hook] as ERC20Hook
                 if (!hook.ink) hook.ink = {}
                 if (!hook.ink[i]) hook.ink[i] = {}
+
                 hook.ink[i][u] = BigNumber.from(val)
 
-            } else if (i === ':uninft') {
+            } else if (isUniNFT(i)) {
 
                 // initialize ink if empty
                 const hook :UniV3NFTHook= hooks[info.hook] as UniV3NFTHook
@@ -424,6 +447,11 @@ const scanilk = (i :string) => {
         let u   = _u as Address
         let urn = info.urns[u]
 
+        if (!hook.hasInk(i, u) && urn.art.eq(0)) {
+            delete info.urns[u]
+            continue
+        }
+
         // calc tab and cut without directly calling bank
         debug(`checking urn (${i},${u}): ink=${hook.ink[i][u]}, art=${urn.art}`)
         debug(`    par=${par}, rack=${info.rack}`)
@@ -454,7 +482,6 @@ const scanilk = (i :string) => {
                             strat.fill_flip,
                             b32(i), u, fliptype, {gasLimit: 10000000}
                         )
-                        delete info.urns[u]
                         debug(`fill_flip success on urn (${i},${u})`)
                     } catch (e) {
                         debug(`failed to flip urn (${i}, ${u})`)
