@@ -74,6 +74,9 @@ class ERC20Hook implements Hook {
 
     cut(i :Ilk, u :Address) :BigNumber {
         let item = this.items[i]
+        if (!item || !feeds[item.src] || !feeds[item.src][item.tag]) {
+            return constants.MaxUint256
+        }
         let feed = feeds[item.src][item.tag]
         if (!this.ink[i]) this.ink[i] = {}
         if (!this.ink[i][u]) this.ink[i][u] = ethers.constants.Zero
@@ -127,8 +130,16 @@ class UniV3NFTHook implements Hook {
 
         for (let tokenId of this.ink[i][u]) {
             let {token0, token1} = this.nfts[tokenId.toString()]
+            if (!this.sources[i][token0.gem] || !this.sources[i][token1.gem]) {
+                return constants.MaxUint256
+            }
+ 
             let source0 = this.sources[i][token0.gem]
             let source1 = this.sources[i][token1.gem]
+            if (!source0.src || !source0.tag || !source1.src || !src1.tag) {
+                return constants.MaxUint256
+            }
+ 
             let feed0 = feeds[source0.src][source0.tag]
             let feed1 = feeds[source1.src][source1.tag]
             res = res.add(feed0.val.mul(token0.amt).mul(RAY).div(source0.liqr))
@@ -412,7 +423,7 @@ const savepalm = async (_palm) => {
 }
 
 // save data from a feedbase Push event
-const savepush = (_push, tol) => {
+const savepush = (_push) => {
     const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
     const src = push.src.toLowerCase()
     const tag = xtos(push.tag)
@@ -447,8 +458,10 @@ const scanilk = (i :string) => {
         let u   = _u as Address
         let urn = info.urns[u]
 
-        if (!hook.hasInk(i, u) && urn.art.eq(0)) {
-            delete info.urns[u]
+        if (urn.art.eq(0)) {
+            if (!hook.hasInk(i, u)) {
+                delete info.urns[u]
+            }
             continue
         }
 
@@ -476,13 +489,19 @@ const scanilk = (i :string) => {
                 proms.push(new Promise(async (resolve, reject) => {
                     let res
                     try {
-                        let fliptype = 0
-                        if (i.startsWith(':uninft')) fliptype = 1
-                        let tx = await send(
-                            strat.fill_flip,
-                            b32(i), u, fliptype, {gasLimit: 10000000}
-                        )
-                        debug(`fill_flip success on urn (${i},${u})`)
+                        if (urn.art.gt(0)) {
+                            let fliptype = 0
+                            if (i.startsWith(':uninft')) fliptype = 1
+
+                            let tx = await send(
+                                strat.fill_flip,
+                                b32(i), u, fliptype, {gasLimit: 10000000}
+                            )
+
+                            urn.art = constants.Zero
+
+                            debug(`fill_flip success on urn (${i},${u})`)
+                        }
                     } catch (e) {
                         debug(`failed to flip urn (${i}, ${u})`)
                         debug(e)
@@ -511,7 +530,7 @@ const run_keeper = async (args) => {
     }
 
     // load contracts from pack
-    pack    = require(`./pack/strat_${args.netname}.dpack.json`)
+    pack    = require(args.pack)
     dapp    = await dpack.load(pack, ethers, ali)
     bank    = dapp.bank
     strat   = dapp.strat
@@ -580,7 +599,7 @@ const run_keeper = async (args) => {
     events = await fb.queryFilter(fbfilter)
     for (let event of events) {
         try {
-            savepush(event, args.tol)
+            savepush(event)
         } catch (e) {
             debug('run_keeper: failed to process push')
             //debug(e)
@@ -638,7 +657,7 @@ const run_keeper = async (args) => {
     // listen to future feed pushes
     fb.on(fbfilter, async (push) => {
         try {
-            savepush(push, args.tol)
+            savepush(push)
         } catch (e) {
             debug('fb.on: failed to process push (2)')
             //debug(e)

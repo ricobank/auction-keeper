@@ -175,14 +175,9 @@ describe('keeper', () => {
 
         let args = {
           signer: ali,
-          netname: hh.network.name,
+          pack: './pack/strat_hardhat.dpack.json',
           fliptime: DELAY * 2,
           ilks: 'weth;:uninft',
-          tol: ray(0.1),
-          minprofit: wad(5),
-          expected_rico: wad(10),
-          expected_risk: wad(10),
-          poketime: '100',
           aggs: {}
         }
 
