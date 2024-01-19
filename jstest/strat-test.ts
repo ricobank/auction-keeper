@@ -10,7 +10,7 @@ const { hexZeroPad } = ethers.utils
 const constants = ethers.constants
 
 import { b32, snapshot, revert } from 'minihat'
-import { run_keeper } from '../keeper'
+import { run_keeper, print_stats } from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -178,7 +178,8 @@ describe('keeper', () => {
           pack: './pack/strat_hardhat.dpack.json',
           fliptime: DELAY * 2,
           ilks: 'weth;:uninft',
-          aggs: {}
+          aggs: {},
+          flip: true
         }
 
         // map aggregator to (src, tag) pairs
@@ -292,6 +293,7 @@ describe('keeper', () => {
         await send(fb.push, b32('dai:ref'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
         await delay(DELAY * 5)
         want(await nfpm.ownerOf(ricodaitokid)).eql(ALI)
+
     })
 
     it('fill_flip chainlink gem', async () => {

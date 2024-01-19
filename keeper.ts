@@ -1,4 +1,4 @@
-import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine, RAY } from 'minihat'
+import { send, N, wad, ray, rad, BANKYEAR, wait, warp, mine, RAY, RAD, WAD } from 'minihat'
 import { b32, snapshot, revert } from 'minihat'
 import bn from 'bignumber.js'
 import * as ethers from 'ethers'
@@ -11,6 +11,7 @@ let pack, dapp
 let bank, strat
 let fb, uniwrap
 let ali
+let flip = false
 let ilkinfos : IlkInfos = {}
 
 const constants = ethers.constants
@@ -29,6 +30,10 @@ let way : BigNumber
 let tau : BigNumber
 let how : BigNumber
 let tip : { src: Address, tag: string }
+
+const raybn = bn(RAY.toString())
+const radbn = bn(RAD.toString())
+const wadbn = bn(WAD.toString())
 
 type Ilk = string
 type Address = `0x${string}`
@@ -58,6 +63,9 @@ interface Hook {
 
     hasInk(i :string, u :Address) :boolean
     hasIlk(i :string) :boolean
+
+    showInk(i :string, u :Address)
+    showIlk(i :string)
 }
 
 type Item = {
@@ -102,6 +110,21 @@ class ERC20Hook implements Hook {
 
     hasIlk(i :string) :boolean {
         return i == 'weth'
+    }
+
+    showIlk(i :string) {
+        if (!this.items[i]) return undefined
+        return {
+            type: 'erc20',
+            info: {
+                liqr: bn(this.items[i].liqr.toString()).div(raybn)
+            }
+        }
+    }
+
+    showInk(i :string, u :Address) {
+        if (!this.ink[i]) return undefined
+        else return bn(this.ink[i][u].toString()).div(wadbn)
     }
 
 }
@@ -198,6 +221,41 @@ class UniV3NFTHook implements Hook {
     hasIlk(i :string) :boolean {
         return i == ':uninft'
     }
+    
+    showIlk(i :string) {
+        if (!this.sources[i]) return undefined
+        const sources = this.sources[i]
+        return {
+            type: 'univ3',
+            info: {
+                sources: Object.keys(this.sources[i]).forEach(gem => {
+                    return {
+                        liqr: bn(sources[gem].liqr.toString()).div(raybn)
+                    }
+                })
+            }
+        }
+    }
+
+    showInk(i :string, u :Address) {
+        if (!this.ink[i]) return undefined
+        return {
+            nfts: this.ink[i][u].map((tid) => { 
+                const tid_s = tid.toString();
+                return {
+                    tokenId: tid_s,
+                    token0: {
+                        gem: this.nfts[tid_s].token0.gem,
+                        amount: this.nfts[tid_s].token0.amt.toString()
+                    },
+                    token1: {
+                        gem: this.nfts[tid_s].token1.gem,
+                        amount: this.nfts[tid_s].token1.amt.toString()
+                    }
+                }
+            })
+        }
+    }
 
 }
 
@@ -206,11 +264,15 @@ let hooks : {[hookname: string]: Hook} = {}
 
 // mirrors Vat.Ilk
 type IlkInfo = {
-    hook: string,
-    urns: Urns,
+    tart: BigNumber
     rack: BigNumber,
+    line: BigNumber,
+    dust: BigNumber,
     fee : BigNumber,
-    chop: BigNumber
+    rho : BigNumber,
+    chop: BigNumber,
+    hook: string,
+    urns: Urns
 }
 
 type Feed    = {val: BigNumber, ttl: BigNumber }
@@ -272,7 +334,9 @@ const savepalm = async (_palm) => {
         if (!ilkinfos[idx0]) return
 
         const info : IlkInfo = ilkinfos[idx0]
-        if (key == 'rack') {
+        if (key == 'tart') {
+            info.tart = BigNumber.from(val)
+        } else if (key == 'rack') {
             info.rack = BigNumber.from(val)
         } else if (key == 'fee') {
             info.fee = BigNumber.from(val)
@@ -448,6 +512,8 @@ const savepush = (_push) => {
     feed.ttl = BigNumber.from(push.ttl)
 }
 
+let stats = {}
+
 // scan all urns and flip the flippable ones
 // delete the empty urns
 const scanilk = (i :string) => {
@@ -477,7 +543,26 @@ const scanilk = (i :string) => {
         let cut = hook.cut(i, u)
         debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
 
-        if (tab.gt(cut)) {
+        stats['par'] = bn(par.toString()).div(raybn)
+        stats[i]     = {
+            tart: bn(info.tart.toString()).div(wadbn),
+            rack: bn(info.rack.toString()).div(raybn),
+            line: bn(info.line.toString()).div(radbn),
+            dust: bn(info.dust.toString()).div(radbn),
+            fee:  bn(info.fee.toString()).div(raybn),
+            chop: bn(info.chop.toString()).div(raybn),
+            hook: hook.showIlk(i),
+            urns: {}
+        }
+        stats[i].urns[u] = {
+            safe: !tab.gt(cut),
+            art: bn(urn.art.toString()).div(wadbn),
+            tab: bn(tab.toString()).div(radbn),
+            cut: bn(cut.toString()).div(radbn),
+            ink: hook.showInk(i, u)
+        }
+
+        if (flip && tab.gt(cut)) {
             // urn is unsafe...bail it if profitable
             let deal = RAY
             if (tab.gt(RAY)) {
@@ -527,6 +612,8 @@ const run_keeper = async (args) => {
     debug('schedule')
     debug('network name:', args.netname)
 
+    flip = args.flip
+
     // setup wallet
     ali = args.signer
     if (!ali) {
@@ -562,11 +649,15 @@ const run_keeper = async (args) => {
         const bankilk = await bank.ilks(b32(i))
         ilkinfos[i] = {
             // src and tag of feed to pull from
-            urns: {},
-            hook: i.startsWith(':uninft') ? 'uninfthook.0' : 'erc20hook.0',
+            tart: bankilk.tart,
             rack: bankilk.rack,
+            line: bankilk.line,
+            dust: bankilk.dust,
             fee:  bankilk.fee,
-            chop: bankilk.chop
+            rho:  bankilk.rho,
+            chop: bankilk.chop,
+            hook: i.startsWith(':uninft') ? 'uninfthook.0' : 'erc20hook.0',
+            urns: {}
         }
     }
 
@@ -685,4 +776,8 @@ const run_keeper = async (args) => {
     scheduleflip()
 }
 
-export { run_keeper }
+const set_flip = x => { flip = x }
+
+const print_stats = () => { console.log(JSON.stringify(stats, null, 2)) }
+
+export { run_keeper, set_flip, print_stats }
