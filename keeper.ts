@@ -58,7 +58,6 @@ interface Hook {
 
     hasInk(i :string, u :Address) :boolean
     hasIlk(i :string) :boolean
-    zero()
 }
 
 type Item = {
@@ -103,10 +102,6 @@ class ERC20Hook implements Hook {
 
     hasIlk(i :string) :boolean {
         return i == 'weth'
-    }
-
-    zero() {
-        return constants.Zero
     }
 
 }
@@ -202,10 +197,6 @@ class UniV3NFTHook implements Hook {
 
     hasIlk(i :string) :boolean {
         return i == ':uninft'
-    }
-
-    zero() {
-        return []
     }
 
 }
@@ -470,11 +461,13 @@ const scanilk = (i :string) => {
         let u   = _u as Address
         let urn = info.urns[u]
 
-        if (!hook.hasInk(i, u)) {
-            if (urn.art.eq(0)) {
-                delete info.urns[u]
-            }
+        if (!hook.hasInk(i, u) && urn.art.eq(0)) {
+            delete info.urns[u]
             continue
+        }
+
+        if (urn.art.eq(0) || !hook.hasInk(i, u)) {
+            continue;
         }
 
         // calc tab and cut without directly calling bank
@@ -501,7 +494,7 @@ const scanilk = (i :string) => {
                 proms.push(new Promise(async (resolve, reject) => {
                     let res
                     try {
-                        if (urn.art.gt(0)) {
+                        if (urn.art && urn.art.gt(0)) {
                             let fliptype = 0
                             if (i.startsWith(':uninft')) fliptype = 1
 
@@ -511,7 +504,6 @@ const scanilk = (i :string) => {
                             )
 
                             urn.art = constants.Zero
-                            hook.ink[i] = hook.zero()
 
                             debug(`fill_flip success on urn (${i},${u})`)
                         }
