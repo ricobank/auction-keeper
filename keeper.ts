@@ -607,7 +607,7 @@ const scanilk = (i :string) => {
     return proms
 }
 
-const run_keeper = async (args) => {
+const runKeeper = async (args) => {
 
     debug('schedule')
     debug('network name:', args.netname)
@@ -671,7 +671,7 @@ const run_keeper = async (args) => {
         try {
             savepalm(event)
         } catch (e) {
-            debug('run_keeper: failed to process event')
+            debug('runKeeper: failed to process event')
             //debug(e)
         }
     }
@@ -697,7 +697,7 @@ const run_keeper = async (args) => {
         try {
             savepush(event)
         } catch (e) {
-            debug('run_keeper: failed to process push')
+            debug('runKeeper: failed to process push')
             //debug(e)
         }
     }
@@ -725,7 +725,7 @@ const run_keeper = async (args) => {
                 try {
                     await saveRead(reader.src, reader.tag)
                 } catch (e) {
-                    debug('run_keeper: failed to saveRead')
+                    debug('runKeeper: failed to saveRead')
                 }
             }
  
@@ -741,7 +741,7 @@ const run_keeper = async (args) => {
                 try {
                     await saveRead(reader.src, reader.tag)
                 } catch (e) {
-                    debug('run_keeper: failed to saveRead')
+                    debug('runKeeper: failed to saveRead')
                     debug(e)
                 }
  
@@ -776,8 +776,10 @@ const run_keeper = async (args) => {
     scheduleflip()
 }
 
-const set_flip = x => { flip = x }
+const setFlip = x => { flip = x }
 
-const print_stats = () => { console.log(JSON.stringify(stats, null, 2)) }
+const printStats = () => { console.log(JSON.stringify(stats, null, 2)) }
 
-export { run_keeper, set_flip, print_stats }
+const getStats = () => { return stats }
+
+export { runKeeper, setFlip, printStats, getStats }

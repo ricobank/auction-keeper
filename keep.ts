@@ -1,4 +1,4 @@
-import { run_keeper } from './keeper'
+import { runKeeper } from './keeper'
 
 let args = {
   url:      undefined,  // your RPC url
@@ -12,4 +12,4 @@ let args = {
 }
 
 
-run_keeper(args)
+runKeeper(args)

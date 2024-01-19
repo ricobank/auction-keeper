@@ -10,7 +10,7 @@ const { hexZeroPad } = ethers.utils
 const constants = ethers.constants
 
 import { b32, snapshot, revert } from 'minihat'
-import { run_keeper, print_stats } from '../keeper'
+import { runKeeper, printStats } from '../keeper'
 
 import { Worker } from 'worker_threads'
 
@@ -185,7 +185,7 @@ describe('keeper', () => {
         // map aggregator to (src, tag) pairs
         args.aggs[aue.address] = [{ src: pr.address, tag: 'weth:ref' }]
 
-        await run_keeper(args)
+        await runKeeper(args)
 
         debug('mint some weth and rico, pull some dai from bot')
 
