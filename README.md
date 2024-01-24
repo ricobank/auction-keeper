@@ -44,4 +44,4 @@ In hardhat console:
 
 To display urn stats:
 
-- `getStats()`
+- `printStats()`
