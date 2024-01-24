@@ -36,11 +36,11 @@ In hardhat console:
 
 `args` is an object composed of:
 
-`signer`: the signer
-`pack`: the dpack pack object containing `strat`
-`fliptime`: Time between ilk scans
-`aggs`: Object mapping aggregator address -> array of {src, tag} objects containing the feedbase feeds to read from when the aggregator emits AnswerUpdated
-`flip`: true if bailing urns
+- `signer`: the signer
+- `pack`: the dpack pack object containing `strat`
+- `fliptime`: Time between ilk scans
+- `aggs`: Object mapping aggregator address -> array of {src, tag} objects containing the feedbase feeds to read from when the aggregator emits AnswerUpdated
+- `flip`: true if bailing urns
 
 To display urn stats:
 
