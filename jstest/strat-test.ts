@@ -15,6 +15,7 @@ import { runKeeper, printStats } from '../keeper'
 import { Worker } from 'worker_threads'
 
 const dpack = require('@etherpacks/dpack')
+const uni_pack = require('../lib/ricobank/lib/uniswapv3/pack/uniswapv3_ethereum.dpack.json')
 
 const bn2b32 = (bn) => hexZeroPad(bn.toHexString(), 32)
 const i0 = Buffer.alloc(32) // ilk 0 id
@@ -57,6 +58,39 @@ const create_path = (tokens, fees) => {
 
     return {fore, rear}
 }
+
+const createAndInitializePoolIfNecessary = async (
+    ali, factory, token0, token1, fee, sqrtPriceX96?
+  ) => {
+    if (token1 < token0) {
+      let t1 = token1
+      token1 = token0
+      token0 = t1
+      if (sqrtPriceX96) {
+        // invert the price
+        sqrtPriceX96 = ethers.BigNumber.from(2).pow(96).pow(2).div(sqrtPriceX96)
+      }
+    }
+    let pooladdr = await factory.getPool(token0, token1, fee)
+
+    if (pooladdr == ethers.constants.AddressZero) {
+      await send(factory.createPool, token0, token1, fee)
+      pooladdr = await factory.getPool(token0, token1, fee)
+      const uni_dapp = await dpack.load(
+        uni_pack, ethers, ali
+      )
+      const pool_artifact = await dpack.getIpfsJson(
+        uni_dapp._types.UniswapV3Pool.artifact['/']
+      )
+      const pool = await ethers.getContractAt(pool_artifact.abi, pooladdr, ali)
+      await send(
+        pool.initialize, sqrtPriceX96 ? sqrtPriceX96 : '0x1' + '0'.repeat(96/4)
+      );
+    }
+
+    return pooladdr
+}
+
 
 const join_pool = async (args) => {
     let nfpm = args.nfpm
@@ -131,7 +165,7 @@ describe('keeper', () => {
         bank = dapp.bank
         strat = dapp.strat
         ploker = dapp.ploker
-        weth = await ethers.getContractAt('WethLike', dapp.weth.address)
+        weth = dapp.weth
         rico = dapp.rico
         risk = dapp.risk
         divider = dapp.divider
@@ -187,48 +221,39 @@ describe('keeper', () => {
 
         await runKeeper(args)
 
-        debug('mint some weth and rico, pull some dai from bot')
-
-        const botaddr = "0xA69babEF1cA67A37Ffaf7a485DfFF3382056e78C"
-        await hh.network.provider.request({
-            method: "hardhat_impersonateAccount",
-            params: [botaddr]
-        });
-        const botsigner = await ethers.getSigner("0xA69babEF1cA67A37Ffaf7a485DfFF3382056e78C")
-        await send(dapp.dai.connect(botsigner).transfer, ALI, amt)
-        await hh.network.provider.request({
-            method: "hardhat_stopImpersonatingAccount",
-            params: [botaddr]
-        });
-
-        debug('calling join pool')
+        debug('mint some weth, dai, frob some rico')
+        await send(dapp.dai.mint, ALI, amt.mul(10000000))
         await send(weth.approve, bank.address, ethers.constants.MaxUint256)
-        await send(weth.deposit, {value: amt.mul(4)})
-        await send(weth.transfer, BOB, amt.mul(4))
+        await send(weth.mint, BOB, amt.mul(10000000))
+        await send(weth.mint, ALI, amt.mul(10000000))
         let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(3)])
         await weth.connect(bob).callStatic.approve(bank.address, ethers.constants.MaxUint256)
         await send(weth.connect(bob).approve, bank.address, ethers.constants.MaxUint256, {gasLimit: 10000000})
         await send(bank.connect(bob).frob, b32('weth'), BOB, dink, amt.mul(2), {gasLimit: 100000000})
         await send(rico.connect(bob).transfer, ALI, await rico.balanceOf(BOB), {gasLimit: 100000000})
 
+        debug('calling join pool')
         let joinres = await join_pool({
             nfpm: nfpm, ethers: ethers, ali: ali,
             a1: { token: rico.address, amountIn: amt },
-            a2: { token: dai.address, amountIn: amt },
+            a2: { token: dai.address, amountIn: amt.mul(2000) },
             fee: 500,
             tickSpacing: 10
         })
         ricodaitokid = joinres.tokenId
-        dink = ethers.utils.solidityPack(["int256"], [amt])
-        await send(risk.mint, ALI, amt)
+
+        await createAndInitializePoolIfNecessary(
+            ali, dapp.uniswapV3Factory, weth.address, dai.address, 500
+        )
         await join_pool({
             nfpm: nfpm, ethers: ethers, ali: ali,
-            a1: { token: rico.address, amountIn: amt },
-            a2: { token: risk.address, amountIn: amt },
-            fee: 3000,
-            tickSpacing: 60
+            a1: { token: weth.address, amountIn: amt },
+            a2: { token: dai.address, amountIn: amt.mul(2000) },
+            fee: 500,
+            tickSpacing: 10
         })
 
+        dink = ethers.utils.solidityPack(["int256"], [amt])
         await send(rico.approve, bank.address, ethers.constants.MaxUint256)
 
         await snapshot(hh);
@@ -241,13 +266,11 @@ describe('keeper', () => {
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
     it('fill_flip gem', async () => {
-        await send(weth.deposit, {value: amt.mul(2)})
-
         let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(2)])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
 
         await delay(DELAY)
-        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.25)), constants.MaxUint256)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.01)), constants.MaxUint256)
         await delay(DELAY * 3)
 
         let art = await bank.urns(b32('weth'), ALI)
@@ -290,7 +313,7 @@ describe('keeper', () => {
 
         await delay(DELAY)
         want(await nfpm.ownerOf(ricodaitokid)).eql(bank.address)
-        await send(fb.push, b32('dai:ref'), bn2b32(ray(0.001)), ethers.constants.MaxUint256)
+        await send(fb.push, b32('dai:ref'), bn2b32(ray(0.0001)), ethers.constants.MaxUint256)
         await delay(DELAY * 5)
         want(await nfpm.ownerOf(ricodaitokid)).eql(ALI)
 
@@ -299,13 +322,13 @@ describe('keeper', () => {
     it('fill_flip chainlink gem', async () => {
         await send(bank.filh, b32('weth'), b32('src'), [], rpaddr(pr.address))
 
-        await send(weth.deposit, {value: amt.mul(2)})
+        await send(weth.mint, ALI, amt.mul(2))
 
         let dink = ethers.utils.defaultAbiCoder.encode(['int'], [amt.mul(2)])
         await send(bank.frob, b32('weth'), ALI, dink, amt)
 
         await delay(DELAY)
-        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.25)), constants.MaxUint256)
+        await send(fb.push, b32('weth:ref'), bn2b32(ray(0.01)), constants.MaxUint256)
         await delay(DELAY * 3)
 
         let art = await bank.urns(b32('weth'), ALI)
