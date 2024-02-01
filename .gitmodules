@@ -1,7 +1,7 @@
 [submodule "lib/ricobank"]
 	path = lib/ricobank
 	url = https://github.com/ricobank/ricobank
-	branch = uniconfig
+	branch = launchprices
 [submodule "lib/feedbase"]
 	path = lib/feedbase
 	url = https://github.com/feedbase/feedbase

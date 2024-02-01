@@ -5,12 +5,9 @@ import './lib/ricobank/lib/feedbase/task/deploy-feedbase'
 import './lib/ricobank/lib/weth/task/deploy-mock-weth'
 import './lib/ricobank/lib/uniswapv3/task/deploy-uniswapv3'
 
-import './lib/ricobank/task/deploy-mock-gemfab'
-import './lib/ricobank/task/deploy-mock-feedbase'
-import './lib/ricobank/task/deploy-mock-tokens'
-
-import './lib/ricobank/task/deploy-mock-dependencies'
 import './lib/ricobank/task/deploy-ricobank'
+import './lib/ricobank/task/deploy-dependencies'
+import './lib/ricobank/task/deploy-tokens'
 import './task/deploy-strat'
 
 /**
