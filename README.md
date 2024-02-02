@@ -30,17 +30,18 @@ In hardhat console:
 
 In hardhat console:
 
-- `{run_keeper, printStats} = require('./keeper')`
-- `await run_keeper(args)`
+- `{runKeeper, printStats} = require('./keeper')`
+- `await runKeeper('./args.json', ali)`
 
 
-`args` is an object composed of:
+`args.json` has the following elements:
 
-- `signer`: the signer
-- `pack`: the dpack pack object containing `strat`
-- `fliptime`: Time between ilk scans
-- `aggs`: Object mapping aggregator address -> array of {src, tag} objects containing the feedbase feeds to read from when the aggregator emits AnswerUpdated
-- `flip`: true if bailing urns
+- `netname`: the lowercase network name ('arbitrum')
+- `ricopack`: IPFS CID pointing to core rico credit system pack
+- `aggpack`: IPFS CID pointing to [chainlink aggregators pack](https://github.com/etherpacks/chainlink)
+- `fliptime`: Time between ilk scans in ms
+- `aggs`: Object mapping chainlink data feed pair -> array of feeds to update when the aggregator updates
+- `flip`: true if bailing urns, false if just collecting stats
 
 To display urn stats:
 
