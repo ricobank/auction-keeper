@@ -1,0 +1,28 @@
+{
+  "netname": "arbitrum",
+  "pack": "bafkreihqad3xblizwul5mapncataszn2syjdbpzib6fuvzyz3spvdtuayi",
+  "fliptime": 5000,       
+  "ilks": "weth;arb;wsteth;usdc;usdc.e;wbtc;link;reth;dai;:uninft", 
+  "aggs": {
+      "xau_usd": [
+          "weth:ref",
+          "arb:ref",
+          "wsteth:ref",
+          "usdc:ref",
+          "wbtc:ref",
+          "link:ref",
+          "reth:ref",
+          "dai:ref",
+          "rico:ref"
+      ],
+      "eth_usd": [ "weth:ref" ],
+      "arb_usd": [ "arb:ref" ],
+      "wsteth_eth": [ "wsteth:ref" ],
+      "btc_usd": [ "wbtc:ref" ],
+      "link_usd": [ "link:ref" ],
+      "reth_eth": [ "reth:ref" ],
+      "dai_usd": [ "dai:ref" ]
+  },
+  "flip": false
+}
+

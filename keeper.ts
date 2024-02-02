@@ -29,7 +29,9 @@ let par : BigNumber
 let way : BigNumber
 let tau : BigNumber
 let how : BigNumber
-let tip : { src: Address, tag: string }
+let tip : { src: Address, tag: string } = {
+    src: constants.AddressZero, tag: constants.HashZero
+}
 
 const raybn = bn(RAY.toString())
 const radbn = bn(RAD.toString())
@@ -109,7 +111,20 @@ class ERC20Hook implements Hook {
     }
 
     hasIlk(i :string) :boolean {
-        return i == 'weth'
+        switch (i) {
+            case 'weth':
+            case 'arb':
+            case 'link':
+            case 'usdc':
+            case 'usdc.e':
+            case 'wbtc':
+            case 'reth':
+            case 'wsteth':
+            case 'dai':
+                return true
+            default:
+                return false
+        }
     }
 
     showIlk(i :string) {
@@ -317,9 +332,9 @@ const savepalm = async (_palm) => {
         } else if (key == 'how') {
             how = BigNumber.from(val)
         } else if (key == 'tip.src') {
-            tip.src = val.slice(0, 42)
+            tip['src'] = val.slice(0, 42)
         } else if (key == 'tip.tag') {
-            tip.tag = xtos(val)
+            tip['tag'] = xtos(val)
         } else {
             debug(`palm0: ${key} not handled`)
         }
@@ -622,8 +637,7 @@ const runKeeper = async (args) => {
     }
 
     // load contracts from pack
-    pack    = require(args.pack)
-    dapp    = await dpack.load(pack, ethers, ali)
+    dapp    = await dpack.load(args.pack, ethers, ali)
     bank    = dapp.bank
     strat   = dapp.strat
     fb      = dapp.feedbase
@@ -715,7 +729,7 @@ const runKeeper = async (args) => {
     for (let agg of Object.keys(args.aggs)) {
         let clfilter = {
             address: agg,
-            topics: [ANSWERUPDATED]
+            topics: []
         }
         events = await bank.queryFilter(clfilter)
 
@@ -782,4 +796,30 @@ const printStats = () => { console.log(JSON.stringify(stats, null, 2)) }
 
 const getStats = () => { return stats }
 
-export { runKeeper, setFlip, printStats, getStats }
+// all of the src addresses are the same right now
+// do this to reduce duplicate entries in args.json
+const makeArgs = async (path, aggpackcid, ali, src) => {
+    let args = require(path)
+    let aggdapp = await dpack.load(aggpackcid, ethers, ali)
+
+    let newaggs = []
+    for (let aggname of Object.keys(args.aggs)) {
+        const agg = aggdapp[`agg_${aggname}`]
+        if (!agg) {
+            throw Error(`no aggregator found for ${aggname}`)
+        }
+
+        const proxyabi = ['function aggregator() view returns (address)']
+        const proxy = new ethers.Contract(agg.address, proxyabi, ali)
+        const aggImplAddr = await proxy.aggregator()
+
+        newaggs[aggImplAddr] = args.aggs[aggname].map(tag => { return { src, tag } })
+    }
+
+    args.signer = ali
+
+    args.aggs = newaggs
+    return args
+}
+
+export { runKeeper, setFlip, printStats, getStats, makeArgs }
