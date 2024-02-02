@@ -154,6 +154,9 @@ describe('keeper', () => {
             }
         )
 
+        const cid = await dpack.putIpfsJson(pack, true)
+        console.log(`wrote strat pack to ${cid}`)
+
         dapp = await dpack.load(pack, ethers, ali)
 
         fb = dapp.feedbase
@@ -204,7 +207,7 @@ describe('keeper', () => {
 
         let args = {
           signer: ali,
-          pack: './pack/strat_hardhat.dpack.json',
+          ricopack: cid,
           fliptime: DELAY * 2,
           ilks: 'weth;:uninft',
           aggs: {},

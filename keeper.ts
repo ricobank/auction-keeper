@@ -622,12 +622,48 @@ const scanilk = (i :string) => {
     return proms
 }
 
-const runKeeper = async (args) => {
+// all of the src addresses are the same right now
+// do this to reduce duplicate entries in args.json
+const makeArgs = async (path, ali) => {
+    let args = require(path)
+    let aggdapp = await dpack.load(args.aggpack, ethers, ali)
+    let dapp = await dpack.load(args.ricopack, ethers, ali)
+    const src = dapp.divider.address
+
+    let newaggs = []
+    for (let aggname of Object.keys(args.aggs)) {
+        const agg = aggdapp[`agg_${aggname}`]
+        if (!agg) {
+            throw Error(`no aggregator found for ${aggname}`)
+        }
+
+        const proxyabi = ['function aggregator() view returns (address)']
+        const proxy = new ethers.Contract(agg.address, proxyabi, ali)
+        const aggImplAddr = await proxy.aggregator()
+
+        newaggs[aggImplAddr] = args.aggs[aggname].map(tag => { return { src, tag } })
+    }
+
+    args.signer = ali
+    args.aggs = newaggs
+    args.ricodapp = dapp
+
+    return args
+}
+
+const runKeeper = async (args, signer?) => {
 
     debug('schedule')
     debug('network name:', args.netname)
 
     flip = args.flip
+
+    if (typeof(args) == 'string') {
+        if (!signer) {
+            throw new Error('args provided as JSON file, but no signer provided')
+        }
+        args = await makeArgs(args, signer)
+    }
 
     // setup wallet
     ali = args.signer
@@ -637,7 +673,10 @@ const runKeeper = async (args) => {
     }
 
     // load contracts from pack
-    dapp    = await dpack.load(args.pack, ethers, ali)
+    dapp = args.ricodapp
+    if (!dapp) {
+        dapp = await dpack.load(args.ricopack, ethers, ali)
+    }
     bank    = dapp.bank
     strat   = dapp.strat
     fb      = dapp.feedbase
@@ -795,31 +834,5 @@ const setFlip = x => { flip = x }
 const printStats = () => { console.log(JSON.stringify(stats, null, 2)) }
 
 const getStats = () => { return stats }
-
-// all of the src addresses are the same right now
-// do this to reduce duplicate entries in args.json
-const makeArgs = async (path, aggpackcid, ali, src) => {
-    let args = require(path)
-    let aggdapp = await dpack.load(aggpackcid, ethers, ali)
-
-    let newaggs = []
-    for (let aggname of Object.keys(args.aggs)) {
-        const agg = aggdapp[`agg_${aggname}`]
-        if (!agg) {
-            throw Error(`no aggregator found for ${aggname}`)
-        }
-
-        const proxyabi = ['function aggregator() view returns (address)']
-        const proxy = new ethers.Contract(agg.address, proxyabi, ali)
-        const aggImplAddr = await proxy.aggregator()
-
-        newaggs[aggImplAddr] = args.aggs[aggname].map(tag => { return { src, tag } })
-    }
-
-    args.signer = ali
-
-    args.aggs = newaggs
-    return args
-}
 
 export { runKeeper, setFlip, printStats, getStats, makeArgs }

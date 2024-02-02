@@ -1,6 +1,7 @@
 {
   "netname": "arbitrum",
-  "pack": "bafkreihqad3xblizwul5mapncataszn2syjdbpzib6fuvzyz3spvdtuayi",
+  "ricopack": "bafkreihqad3xblizwul5mapncataszn2syjdbpzib6fuvzyz3spvdtuayi",
+  "aggpack": "bafkreibjf2rhqgqhxexotzf3fhgbbwn6m7zes4uldszx5qsy6ovyzp5rry",
   "fliptime": 5000,       
   "ilks": "weth;arb;wsteth;usdc;usdc.e;wbtc;link;reth;dai;:uninft", 
   "aggs": {
