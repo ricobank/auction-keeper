@@ -29,6 +29,11 @@ let par : BigNumber
 let way : BigNumber
 let tau : BigNumber
 let how : BigNumber
+let debt : BigNumber
+let rest : BigNumber
+let joy : BigNumber
+let sin : BigNumber
+let ceil : BigNumber
 let tip : { src: Address, tag: string } = {
     src: constants.AddressZero, tag: constants.HashZero
 }
@@ -335,6 +340,16 @@ const savepalm = async (_palm) => {
             tip['src'] = val.slice(0, 42)
         } else if (key == 'tip.tag') {
             tip['tag'] = xtos(val)
+        } else if (key == 'debt') {
+            debt = BigNumber.from(val)
+        } else if (key == 'rest') {
+            rest = BigNumber.from(val)
+        } else if (key == 'joy') {
+            joy = BigNumber.from(val)
+        } else if (key == 'sin') {
+            sin = BigNumber.from(val)
+        } else if (key == 'ceil') {
+            ceil = BigNumber.from(val)
         } else {
             debug(`palm0: ${key} not handled`)
         }
@@ -559,6 +574,14 @@ const scanilk = (i :string) => {
         debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
 
         stats['par'] = bn(par.toString()).div(raybn)
+        stats['way'] = bn(way.toString()).div(raybn)
+        stats['tau'] = tau.toString()
+        stats['how'] = bn(how.toString()).div(raybn)
+        stats['debt'] = bn(debt.toString()).div(wadbn)
+        stats['rest'] = bn(rest.toString()).div(raybn)
+        stats['joy'] = bn(joy.toString()).div(wadbn)
+        stats['sin'] = bn(sin.toString()).div(radbn)
+        stats['ceil'] = bn(ceil.toString()).div(wadbn)
         stats[i]     = {
             tart: bn(info.tart.toString()).div(wadbn),
             rack: bn(info.rack.toString()).div(raybn),
