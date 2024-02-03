@@ -316,7 +316,7 @@ const xtos = (_ilk) : string => {
 }
 
 // save data from a Palm event
-const savepalm = async (_palm) => {
+const savePalm = async (_palm) => {
 
     const id = _palm.topics[0]
     if (id == PALM0) {
@@ -520,7 +520,7 @@ const savepalm = async (_palm) => {
 }
 
 // save data from a feedbase Push event
-const savepush = (_push) => {
+const savePush = (_push) => {
     const push = fb.interface.decodeEventLog('Push', _push.data, _push.topics)
     const src = push.src.toLowerCase()
     const tag = xtos(push.tag)
@@ -551,6 +551,17 @@ const scanilk = (i :string) => {
     let hook :Hook = hooks[info.hook]
     if (Object.keys(info.urns).length == 0) return []
 
+    stats[i] = {
+        tart: bn(info.tart.toString()).div(wadbn),
+        rack: bn(info.rack.toString()).div(raybn),
+        line: bn(info.line.toString()).div(radbn),
+        dust: bn(info.dust.toString()).div(radbn),
+        fee:  bn(info.fee.toString()).div(raybn),
+        chop: bn(info.chop.toString()).div(raybn),
+        hook: hook.showIlk(i),
+        urns: {}
+    }
+
     let proms = []
     for (let _u in info.urns) {
 
@@ -573,25 +584,6 @@ const scanilk = (i :string) => {
         let cut = hook.cut(i, u)
         debug(`    tab=${tab}, cut=${cut}, so it's ${tab.gt(cut) ? 'not ': ''}safe`)
 
-        stats['par'] = bn(par.toString()).div(raybn)
-        stats['way'] = bn(way.toString()).div(raybn)
-        stats['tau'] = tau.toString()
-        stats['how'] = bn(how.toString()).div(raybn)
-        stats['debt'] = bn(debt.toString()).div(wadbn)
-        stats['rest'] = bn(rest.toString()).div(raybn)
-        stats['joy'] = bn(joy.toString()).div(wadbn)
-        stats['sin'] = bn(sin.toString()).div(radbn)
-        stats['ceil'] = bn(ceil.toString()).div(wadbn)
-        stats[i]     = {
-            tart: bn(info.tart.toString()).div(wadbn),
-            rack: bn(info.rack.toString()).div(raybn),
-            line: bn(info.line.toString()).div(radbn),
-            dust: bn(info.dust.toString()).div(radbn),
-            fee:  bn(info.fee.toString()).div(raybn),
-            chop: bn(info.chop.toString()).div(raybn),
-            hook: hook.showIlk(i),
-            urns: {}
-        }
         stats[i].urns[u] = {
             safe: !tab.gt(cut),
             art: bn(urn.art.toString()).div(wadbn),
@@ -640,6 +632,10 @@ const scanilk = (i :string) => {
                 debug('    pushed fill_flip')
             }
         }
+    }
+
+    if (Object.keys(stats[i].urns).length == 0) {
+        delete stats[i]
     }
 
     return proms
@@ -737,6 +733,29 @@ const runKeeper = async (args, signer?) => {
         }
     }
 
+    const saveRead = async (_src, tag) => {
+        const src = _src.toLowerCase()
+        if (!feeds[src]) feeds[src] = {}
+        if (!feeds[src][tag]) feeds[src][tag] = {val: undefined, ttl: undefined}
+        let feed = feeds[src][tag]
+        let [val, ttl] = await fb.pull(src, b32(tag))
+        feed.val = BigNumber.from(val)
+        feed.ttl = ttl
+    }
+
+    for (let agg of Object.keys(args.aggs)) {
+        const readers = args.aggs[agg]
+        for (let reader of readers) {
+            try {
+                await saveRead(reader.src, reader.tag)
+            } catch (e) {
+                debug('runKeeper: failed to saveRead')
+            }
+        }
+    }
+
+
+
     // query event history for palm events and initialize state
     const palmfilter = {
         address: bank.address,
@@ -745,7 +764,7 @@ const runKeeper = async (args, signer?) => {
     let events = await bank.queryFilter(palmfilter)
     for (let event of events) {
         try {
-            savepalm(event)
+            savePalm(event)
         } catch (e) {
             debug('runKeeper: failed to process event')
             //debug(e)
@@ -755,7 +774,7 @@ const runKeeper = async (args, signer?) => {
     // start palm listener
     bank.on(palmfilter, async (event) => { 
         try {
-            savepalm(event)
+            savePalm(event)
         } catch (e) {
             debug('bank.on: failed to process event')
             //debug(e)
@@ -771,40 +790,10 @@ const runKeeper = async (args, signer?) => {
     events = await fb.queryFilter(fbfilter)
     for (let event of events) {
         try {
-            savepush(event)
+            savePush(event)
         } catch (e) {
             debug('runKeeper: failed to process push')
             //debug(e)
-        }
-    }
-
-    const saveRead = async (_src, tag) => {
-        const src = _src.toLowerCase()
-        if (!feeds[src]) feeds[src] = {}
-        if (!feeds[src][tag]) feeds[src][tag] = {val: undefined, ttl: undefined}
-        let feed = feeds[src][tag]
-        let [val, ttl] = await fb.pull(src, b32(tag))
-        feed.val = BigNumber.from(val)
-        feed.ttl = ttl
-    }
-
-    for (let agg of Object.keys(args.aggs)) {
-        let clfilter = {
-            address: agg,
-            topics: []
-        }
-        events = await bank.queryFilter(clfilter)
-
-        if (events.length > 0) {
-            const readers = args.aggs[agg]
-            for (let reader of readers) {
-                try {
-                    await saveRead(reader.src, reader.tag)
-                } catch (e) {
-                    debug('runKeeper: failed to saveRead')
-                }
-            }
- 
         }
     }
 
@@ -829,7 +818,7 @@ const runKeeper = async (args, signer?) => {
     // listen to future feed pushes
     fb.on(fbfilter, async (push) => {
         try {
-            savepush(push)
+            savePush(push)
         } catch (e) {
             debug('fb.on: failed to process push (2)')
             //debug(e)
@@ -842,6 +831,17 @@ const runKeeper = async (args, signer?) => {
             // check all urns under all ilks, flip if possible
             let proms = Object.keys(ilkinfos).map(scanilk)
             await Promise.all(proms)
+
+            stats['par'] = bn(par.toString()).div(raybn)
+            stats['way'] = bn(way.toString()).div(raybn)
+            stats['tau'] = tau.toString()
+            stats['how'] = bn(how.toString()).div(raybn)
+            stats['debt'] = bn(debt.toString()).div(wadbn)
+            stats['rest'] = bn(rest.toString()).div(raybn)
+            stats['joy'] = bn(joy.toString()).div(wadbn)
+            stats['sin'] = bn(sin.toString()).div(radbn)
+            stats['ceil'] = bn(ceil.toString()).div(wadbn)
+
         } catch (e) {
             debug('scanilk failed:')
             debug(e)

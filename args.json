@@ -10,6 +10,7 @@
           "arb:ref",
           "wsteth:ref",
           "usdc:ref",
+          "usdc.e:ref",
           "wbtc:ref",
           "link:ref",
           "reth:ref",
@@ -22,7 +23,8 @@
       "btc_usd": [ "wbtc:ref" ],
       "link_usd": [ "link:ref" ],
       "reth_eth": [ "reth:ref" ],
-      "dai_usd": [ "dai:ref" ]
+      "dai_usd": [ "dai:ref" ],
+      "usdc_usd": [ "usdc:ref", "usdc.e:ref" ]
   },
   "flip": false
 }
