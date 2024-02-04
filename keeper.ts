@@ -506,6 +506,7 @@ const savePalm = async (_palm) => {
                 await Promise.all(proms)
 
                 hook.ink[i][u] = tokenIds
+                debug(`:uninft set urn (${i}, ${u}) ink to tokenIds: ${tokenIds}`)
 
             } else {
                 debug(`palmbytes2: ${key} not handled for ilk ${i}`)
