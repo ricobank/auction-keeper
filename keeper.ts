@@ -484,6 +484,7 @@ const savePalm = async (_palm) => {
 
                 // decode new set of tokenIds
                 let tokenIds = ethers.utils.defaultAbiCoder.decode(['uint[]'], val)[0]
+                hook.ink[i][u] = tokenIds
 
                 // get the t0/t1 amounts for each nft
                 // save it for later so scanilk doesn't need to await,
@@ -505,7 +506,6 @@ const savePalm = async (_palm) => {
                 )
                 await Promise.all(proms)
 
-                hook.ink[i][u] = tokenIds
                 debug(`:uninft set urn (${i}, ${u}) ink to tokenIds: ${tokenIds}`)
 
             } else {
