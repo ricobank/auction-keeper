@@ -10,6 +10,7 @@ const debug = require('debug')('keeper:run')
 let pack, dapp
 let bank, strat
 let fb, uniwrap
+let PARADAPT
 let ali
 let flip = false
 let ilkinfos : IlkInfos = {}
@@ -309,6 +310,8 @@ const xtos = (_ilk) : string => {
     let ilk = _ilk
     if (typeof(_ilk) == 'string') {
         ilk = Buffer.from(_ilk.slice(2), 'hex')
+    } else if (_ilk.length == 0) {
+        ilk = ethers.constants.HashZero
     }
     let last = ilk.indexOf(0)
     let sliced = last == -1 ? ilk : ilk.slice(0, last)
@@ -330,6 +333,10 @@ const savePalm = async (_palm) => {
 
         if (key == 'par') {
             par = BigNumber.from(val)
+            feeds[PARADAPT][constants.HashZero] = {
+                val: par,
+                ttl: constants.MaxUint256
+            }
         } else if (key == 'way') {
             way = BigNumber.from(val)
         } else if (key == 'tau') {
@@ -697,10 +704,11 @@ const runKeeper = async (args, signer?) => {
     if (!dapp) {
         dapp = await dpack.load(args.ricopack, ethers, ali)
     }
-    bank    = dapp.bank
-    strat   = dapp.strat
-    fb      = dapp.feedbase
-    uniwrap = dapp.uniswapV3Wrapper
+    bank     = dapp.bank
+    strat    = dapp.strat
+    fb       = dapp.feedbase
+    uniwrap  = dapp.uniswapV3Wrapper
+    PARADAPT = dapp.paradapter.address.toLowerCase()
 
     // setup hooks
     // these update on palm
@@ -712,6 +720,12 @@ const runKeeper = async (args, signer?) => {
 
     hooks['erc20hook.0']  = erc20hook
     hooks['uninfthook.0'] = nfthook
+
+    feeds[PARADAPT] = {}
+    feeds[PARADAPT][constants.HashZero] = {
+        val: RAY,
+        ttl: constants.MaxUint256
+    }
 
     // approve infinite rico to bank
     await send(dapp.rico.approve, bank.address, ethers.constants.MaxUint256)
