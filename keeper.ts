@@ -118,8 +118,6 @@ const savePalm = async (_palm) => {
         }
 
     } else if (id == PALM1) {
-        debug("PALM1!!!!")
-
         const palm = bank.interface.decodeEventLog('NewPalm1', _palm.data, _palm.topics)
         const key  = xtos(palm.key)
         const val  = palm.val
@@ -156,18 +154,15 @@ const scan = () => {
         let u   = _u as Address
         let urn = urns[u]
 
-        debug("SCANNING AN URN")
         if (urn.ink.eq(0) && urn.art.eq(0)) {
             delete urns[u]
             continue
         }
-        debug("CHECKING MORE...")
 
         if (urn.art.eq(0) || urn.ink.eq(0)) continue;
-        debug("GOING IN...")
 
         // calc tab and cut without directly calling bank
-        debug(`checking ${u}'s urn: ink=${urn.ink[u]}, art=${urn.art}`)
+        debug(`checking ${u}'s urn: ink=${urn.ink}, art=${urn.art}`)
         debug(`    par=${par}, rack=${rack}`)
         let tab = urn.art.mul(par).mul(rack).div(RAY)
         let cut = urn.ink.mul(RAY).div(liqr).mul(RAY)
