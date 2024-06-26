@@ -1,14 +1,9 @@
 import '@nomiclabs/hardhat-ethers'
 
 import './lib/ricobank/lib/gemfab/task/deploy-gemfab'
-import './lib/ricobank/lib/feedbase/task/deploy-feedbase'
-import './lib/ricobank/lib/weth/task/deploy-mock-weth'
-import './lib/ricobank/lib/uniswapv3/task/deploy-uniswapv3'
-
 import './lib/ricobank/task/deploy-ricobank'
 import './lib/ricobank/task/deploy-dependencies'
 import './lib/ricobank/task/deploy-tokens'
-import './task/deploy-strat'
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
@@ -51,6 +46,13 @@ export default {
           },
           chainId: 421613
       },
+      arbitrum_sepolia: {
+          url: process.env["ARB_SEPOLIA_RPC_URL"],
+          accounts: {
+            mnemonic: process.env["ARB_SEPOLIA_MNEMONIC"]
+          },
+          chainId: 421614
+      },
       arbitrum: {
         url: process.env["ARB_RPC_URL"],
         accounts: {
@@ -59,5 +61,4 @@ export default {
         chainId: 42161
       }
   }
-
 };

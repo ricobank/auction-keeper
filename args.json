@@ -1,7 +1,6 @@
 {
   "netname": "arbitrum_sepolia",
   "ricopack": "bafkreibtgcbclc5q2dxs6h7mljyqmfrrz5yxncrsgzo2omsjugbjqvwo64",
-  "fliptime": 5000,       
-  "flip": false
+  "searchtime": 5000
 }
 
