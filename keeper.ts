@@ -13,7 +13,6 @@ let fb, uniwrap
 let PARADAPT
 let ali
 let flip = false
-let ilkinfos : IlkInfos = {}
 
 const constants = ethers.constants
 const PALM = [
@@ -30,11 +29,9 @@ let par : BigNumber
 let way : BigNumber
 let tau : BigNumber
 let how : BigNumber
-let debt : BigNumber
 let rest : BigNumber
 let joy : BigNumber
 let sin : BigNumber
-let ceil : BigNumber
 let tip : { src: Address, tag: string } = {
     src: constants.AddressZero, tag: constants.HashZero
 }
@@ -355,8 +352,14 @@ const savePalm = async (_palm) => {
             joy = BigNumber.from(val)
         } else if (key == 'sin') {
             sin = BigNumber.from(val)
-        } else if (key == 'ceil') {
-            ceil = BigNumber.from(val)
+        } else if (key == 'tart') {
+            info.tart = BigNumber.from(val)
+        } else if (key == 'rack') {
+            info.rack = BigNumber.from(val)
+        } else if (key == 'fee') {
+            info.fee = BigNumber.from(val)
+        } else if (key == 'chop') {
+            info.chop = BigNumber.from(val)
         } else {
             debug(`palm0: ${key} not handled`)
         }
@@ -368,158 +371,16 @@ const savePalm = async (_palm) => {
         const val  = palm.val
         const idx0 = xtos(palm.idx0)
 
-        if (!ilkinfos[idx0]) return
-
-        const info : IlkInfo = ilkinfos[idx0]
-        if (key == 'tart') {
-            info.tart = BigNumber.from(val)
-        } else if (key == 'rack') {
-            info.rack = BigNumber.from(val)
-        } else if (key == 'fee') {
-            info.fee = BigNumber.from(val)
-        } else if (key == 'chop') {
-            info.chop = BigNumber.from(val)
-        } else if (hooks['erc20hook.0'].hasIlk(idx0)) {
-
-            let erc20hook :ERC20Hook = hooks['erc20hook.0'] as ERC20Hook
-
-            // initialize hook (gem,src,tag,liqr) if undefined
-            if (!erc20hook.items[idx0]) {
-                erc20hook.items[idx0] = {
-                    gem:  ethers.constants.AddressZero,
-                    src:  ethers.constants.AddressZero,
-                    tag:  ethers.constants.HashZero,
-                    liqr: ethers.constants.Zero
-                }
-            }
-
-            let item = erc20hook.items[idx0]
-            if (key == 'gem') {
-                item.gem = val.slice(0, 42)
-            } else if (key == 'src') {
-                item.src = val.slice(0, 42)
-            } else if (key == 'tag') {
-                item.tag = xtos(val)
-            } else if (key == 'liqr') {
-                item.liqr = BigNumber.from(val)
-            } else {
-                debug(`palm1: ${key} not handled for idx ${idx0}`)
-            }
-
-        } else {
-            debug(`palm1: ${key} not handled`)
-        }
-    } else if (id == PALM2) {
-
-        const palm = bank.interface.decodeEventLog('NewPalm2', _palm.data, _palm.topics)
-        const key  = xtos(palm.key)
-        const val  = palm.val
-        const idx0 = palm.idx0
-        const idx1 = palm.idx1
-        const i    = xtos(idx0)
-        const u    = idx1.slice(0, 42)
+        // initialize ink, art if undefined
+        if (!urns[u]) urns[u] = {art: ethers.constants.Zero, ink: ethers.constants.Zero}
 
         if (key == 'art') {
-
-            // initialize art if undefined
-            if (!ilkinfos[i].urns) ilkinfos[i].urns = {}
-            if (!ilkinfos[i].urns[u]) ilkinfos[i].urns[u] = {art: ethers.constants.Zero}
-
             // save art
-            ilkinfos[i].urns[u].art = BigNumber.from(val)
-
-        } else if (hooks['uninfthook.0'].hasIlk(i)) {
-
-            let uninfthook :UniV3NFTHook = hooks['uninfthook.0'] as UniV3NFTHook
-            let gem = u
-
-            // initialize (src, tag, liqr) if undefined
-            if (!uninfthook.sources[i]) uninfthook.sources[i] = {}
-            if (!uninfthook.sources[i][gem]) {
-                uninfthook.sources[i][gem] = {
-                    src: constants.AddressZero,
-                    tag: constants.HashZero,
-                    liqr: constants.Zero
-                }
-            }
-
-            let source = uninfthook.sources[i][gem]
-            if (key == 'src') {
-                source.src = val.slice(0, 42)
-            } else if (key == 'tag') {
-                source.tag = xtos(val)
-            } else if (key == 'liqr') {
-                source.liqr = BigNumber.from(val)
-            } else {
-                debug(`palm2: ${key} not handled for idx ${i},${idx1}`)
-            }
+            urns[u].art = BigNumber.from(val)
+        } else if (key == 'ink') {
+            urns[u].ink = BigNumber.from(val)
         } else {
-            debug(`palm2: ${key} not handled`)
-        }
-
-    } else if (id == PALMBYTES2) {
-
-        const palm = bank.interface.decodeEventLog(
-            'NewPalmBytes2', _palm.data, _palm.topics
-        )
-
-        const key  = xtos(palm.key)
-        const val  = palm.val
-        const idx0 = palm.idx0
-        const idx1 = palm.idx1
-        const i    = xtos(idx0)
-        const u    = idx1.slice(0, 42)
-
-        const info :IlkInfo = ilkinfos[i]
-
-        if (key == 'ink') {
-
-            if (hooks['erc20hook.0'].hasIlk(i)) {
-
-                const hook :ERC20Hook = hooks[info.hook] as ERC20Hook
-                if (!hook.ink) hook.ink = {}
-                if (!hook.ink[i]) hook.ink[i] = {}
-
-                hook.ink[i][u] = BigNumber.from(val)
-
-            } else if (hooks['uninfthook.0'].hasIlk(i)) {
-
-                // initialize ink if empty
-                const hook :UniV3NFTHook= hooks[info.hook] as UniV3NFTHook
-                if (!hook.ink) hook.ink = {}
-                if (!hook.ink[i]) hook.ink[i] = {}
-
-                // decode new set of tokenIds
-                let tokenIds = ethers.utils.defaultAbiCoder.decode(['uint[]'], val)[0]
-                hook.ink[i][u] = tokenIds
-
-                // get the t0/t1 amounts for each nft
-                // save it for later so scanilk doesn't need to await,
-                // along with tokenIds
-                let proms = tokenIds.map(
-                    tokenId => new Promise(async (resolve, reject) => {
-                        try {
-                            let [t0, t1, a0, a1] = await hook.amounts(i, tokenId)
-                            hook.nfts[tokenId.toString()] = {
-                                token0: {gem: t0.toLowerCase(), amt: a0},
-                                token1: {gem: t1.toLowerCase(), amt: a1}
-                            }
-                            resolve(null)
-                        } catch (e) {
-                            debug("palm uni ink fail")
-                            debug(e)
-                        }
-                    })
-                )
-                await Promise.all(proms)
-
-                debug(`:uninft set urn (${i}, ${u}) ink to tokenIds: ${tokenIds}`)
-
-            } else {
-                debug(`palmbytes2: ${key} not handled for ilk ${i}`)
-            }
-        } else {
-            debug(`palmbytes2: ${key} not handled`)
+            debug(`palm1: ${key} not handled`)
         }
 
     } else {
@@ -653,28 +514,10 @@ const scanilk = (i :string) => {
 // do this to reduce duplicate entries in args.json
 const makeArgs = async (path, ali) => {
     let args = require(path)
-    let aggdapp = await dpack.load(args.aggpack, ethers, ali)
     let dapp = await dpack.load(args.ricopack, ethers, ali)
     const src = dapp.divider.address
-
-    let newaggs = []
-    for (let aggname of Object.keys(args.aggs)) {
-        const agg = aggdapp[`agg_${aggname}`]
-        if (!agg) {
-            throw Error(`no aggregator found for ${aggname}`)
-        }
-
-        const proxyabi = ['function aggregator() view returns (address)']
-        const proxy = new ethers.Contract(agg.address, proxyabi, ali)
-        const aggImplAddr = await proxy.aggregator()
-
-        newaggs[aggImplAddr] = args.aggs[aggname].map(tag => { return { src, tag } })
-    }
-
     args.signer = ali
-    args.aggs = newaggs
     args.ricodapp = dapp
-
     return args
 }
 
@@ -758,19 +601,6 @@ const runKeeper = async (args, signer?) => {
         feed.ttl = ttl
     }
 
-    for (let agg of Object.keys(args.aggs)) {
-        const readers = args.aggs[agg]
-        for (let reader of readers) {
-            try {
-                await saveRead(reader.src, reader.tag)
-            } catch (e) {
-                debug('runKeeper: failed to saveRead')
-            }
-        }
-    }
-
-
-
     // query event history for palm events and initialize state
     const palmfilter = {
         address: bank.address,
@@ -811,24 +641,6 @@ const runKeeper = async (args, signer?) => {
             //debug(e)
         }
     }
-
-    for (let agg of Object.keys(args.aggs)) {
-        let contract = new ethers.Contract(agg, auabi, ali)
-        let clfilter = contract.filters.AnswerUpdated(null,null,null);
-        contract.on(clfilter, async (_) => {
-            const readers = args.aggs[agg]
-            for (let reader of readers) {
-                try {
-                    await saveRead(reader.src, reader.tag)
-                } catch (e) {
-                    debug('runKeeper: failed to saveRead')
-                    debug(e)
-                }
- 
-            }
-        })
-    }
- 
 
     // listen to future feed pushes
     fb.on(fbfilter, async (push) => {

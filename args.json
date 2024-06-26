@@ -1,31 +1,7 @@
 {
-  "netname": "arbitrum",
-  "ricopack": "bafkreieglufuj5bnde3id5yizytsncsskfuyizmvf2bhf5fa6skt74rf6m",
-  "aggpack": "bafkreibjf2rhqgqhxexotzf3fhgbbwn6m7zes4uldszx5qsy6ovyzp5rry",
+  "netname": "arbitrum_sepolia",
+  "ricopack": "bafkreibtgcbclc5q2dxs6h7mljyqmfrrz5yxncrsgzo2omsjugbjqvwo64",
   "fliptime": 5000,       
-  "ilks": "weth;arb;wsteth;usdc;usdc.e;wbtc;link;reth;dai;:uninft", 
-  "aggs": {
-      "xau_usd": [
-          "weth:ref",
-          "arb:ref",
-          "wsteth:ref",
-          "usdc:ref",
-          "usdc.e:ref",
-          "wbtc:ref",
-          "link:ref",
-          "reth:ref",
-          "dai:ref",
-          "rico:ref"
-      ],
-      "eth_usd": [ "weth:ref" ],
-      "arb_usd": [ "arb:ref" ],
-      "wsteth_eth": [ "wsteth:ref" ],
-      "btc_usd": [ "wbtc:ref" ],
-      "link_usd": [ "link:ref" ],
-      "reth_eth": [ "reth:ref" ],
-      "dai_usd": [ "dai:ref" ],
-      "usdc_usd": [ "usdc:ref", "usdc.e:ref" ]
-  },
   "flip": false
 }
 
