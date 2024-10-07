@@ -31,6 +31,7 @@
   "homepage": "https://github.com/ricobank/auction-keeper#readme",
   "devDependencies": {
     "@etherpacks/dpack": "^0.0.31",
+    "@nomicfoundation/hardhat-verify": "^2.0.11",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
     "@openzeppelin/contracts": "^4.9.2",
     "@types/mocha": "^10.0.1",

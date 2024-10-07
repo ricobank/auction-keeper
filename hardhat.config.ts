@@ -1,4 +1,5 @@
 import '@nomiclabs/hardhat-ethers'
+import '@nomicfoundation/hardhat-verify'
 
 import './lib/ricobank/lib/gemfab/task/deploy-gemfab'
 import './lib/ricobank/task/deploy-ricobank'
@@ -10,7 +11,7 @@ import './lib/ricobank/task/deploy-tokens'
  */
 export default {
   solidity: {
-    version: "0.8.19",
+    version: "0.8.25",
     settings: {
       optimizer: {
           enabled: true,
@@ -60,5 +61,11 @@ export default {
         },
         chainId: 42161
       }
+  },
+  etherscan: {
+    apiKey: {
+      arbitrumOne: process.env.ARBISCAN_API_KEY,
+      arbitrumSepolia: process.env.ARBISCAN_API_KEY
+    }
   }
 };
